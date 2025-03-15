@@ -1,35 +1,26 @@
 import streamlit as st
 import pandas as pd
 import os
-from io import BytesIO
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+
+# Define file path for storing task data
+data_file = "task_data.csv"
+
+def load_data():
+    """Load task data from a CSV file or initialize an empty DataFrame."""
+    if os.path.exists(data_file):
+        return pd.read_csv(data_file)
+    else:
+        return pd.DataFrame(columns=["Task", "User Completion", "Boss Completion", "Marks"])
+
+def save_data(df):
+    """Save the task data to a CSV file."""
+    df.to_csv(data_file, index=False)
 
 def calculate_marks(completion_percentage, total_marks=5):
     return total_marks * (completion_percentage / 100)
 
-def generate_pdf(df):
-    """Generate a PDF report of the task data."""
-    buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    pdf.setTitle("Task Completion Report")
-    pdf.drawString(100, 750, "Task Completion Report")
-    pdf.drawString(100, 730, "-" * 40)
-    y_position = 710
-    for i, row in df.iterrows():
-        officer_completion = row.get('Officer Completion', 0)
-        marks = row.get('Marks', 0)
-        pdf.drawString(100, y_position, f"{row['Task']}: {officer_completion}% completed, Marks: {marks:.2f}")
-        y_position -= 20
-    pdf.save()
-    buffer.seek(0)
-    return buffer
-
-# Initialize session state for task storage
-if "tasks" not in st.session_state:
-    st.session_state["tasks"] = []
-
-df = pd.DataFrame(st.session_state["tasks"], columns=["Task", "User Completion", "Officer Completion", "Marks"])
+# Load existing data
+df = load_data()
 
 # User authentication
 st.sidebar.header("Login")
@@ -40,75 +31,56 @@ st.title("Task Completion Tracker")
 st.write("This app tracks task completion reviewed by the Reporting Officer.")
 
 if role == "Employee":
-    if "tasks_added" not in st.session_state:
-        st.session_state["tasks_added"] = False
-    
-    if not st.session_state["tasks_added"]:
-        st.header("Add New Tasks")
-        num_tasks = st.number_input("How many tasks do you have to complete?", min_value=1, step=1)
-        new_tasks = []
-        
-        for i in range(int(num_tasks)):
-            task_name = st.text_input(f"Enter name for Task {i+1}", key=f"task_{i}")
-            completion = st.slider(f"Enter completion percentage for {task_name}", 0, 100, 0, 5, key=f"completion_{i}")
-            
-            if task_name:
-                new_tasks.append({"Task": task_name, "User Completion": completion, "Officer Completion": 0, "Marks": 0})
-        
-        if st.button("Add Tasks") and new_tasks:
-            st.session_state["tasks"].extend(new_tasks)
-            st.session_state["tasks_added"] = True
-            st.rerun()
-    else:
-        st.header("Your Tasks and Completion Status")
-        for i in range(len(st.session_state["tasks"])):
-            st.write(f"**{st.session_state['tasks'][i]['Task']}**")
-            st.session_state["tasks"][i]["User Completion"] = st.slider(
-                f'{st.session_state["tasks"][i]["Task"]} Completion', 0, 100, 
-                int(st.session_state["tasks"][i]["User Completion"]), 5
-            )
-        
+    st.header("Add or Update Your Tasks")
+
+    # Add new tasks dynamically
+    new_task_name = st.text_input("Enter a new task name:")
+    if st.button("Add Task") and new_task_name:
+        if new_task_name not in df["Task"].values:
+            new_task = pd.DataFrame({"Task": [new_task_name], "User Completion": [0], "Boss Completion": [0], "Marks": [0]})
+            df = pd.concat([df, new_task], ignore_index=True)
+            save_data(df)
+            st.success(f"Task '{new_task_name}' added successfully!")
+            st.rerun()  # Refresh the page to show the new task
+        else:
+            st.warning("Task already exists! Please enter a different task.")
+
+    # Update completion percentages
+    if not df.empty:
+        for i in range(len(df)):
+            df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
+
         if st.button("Submit Completion"):
+            save_data(df)
             st.success("Task completion updated successfully!")
 
 elif role == "Reporting Officer":
-    st.header("Reporting Officer Review & Adjustments")
+    st.header("Boss Review & Adjustments")
     total_marks_obtained = 0
-    for i in range(len(st.session_state["tasks"])):
-        st.write(f"**{st.session_state['tasks'][i]['Task']}**: {st.session_state['tasks'][i]['User Completion']}% completed")
-        st.session_state["tasks"][i]["Officer Completion"] = st.slider(
-            f"Adjust completion for {st.session_state['tasks'][i]['Task']}", 0, 100, 
-            int(st.session_state["tasks"][i]["User Completion"]), 5
-        )
-        st.session_state["tasks"][i]["Marks"] = calculate_marks(st.session_state["tasks"][i]["Officer Completion"])
-        total_marks_obtained += st.session_state["tasks"][i]["Marks"]
-        st.progress(st.session_state["tasks"][i]["Officer Completion"] / 100)
-        st.write(f"Adjusted Marks: {st.session_state['tasks'][i]['Marks']:.2f}")
-    
-    st.subheader(f"Total Marks Obtained: {total_marks_obtained:.2f}")
-    if st.button("Finalize Review"):
-        st.success("Reporting Officer's review has been saved!")
 
-# Export Report with Download Buttons
+    if not df.empty:
+        for i in range(len(df)):
+            st.write(f"**{df.at[i, 'Task']}**: {df.at[i, 'User Completion']}% completed")
+            df.at[i, "Boss Completion"] = st.slider(f"Adjust completion for {df.at[i, 'Task']}", 0, 100, int(df.at[i, "User Completion"]), 5)
+            df.at[i, "Marks"] = calculate_marks(df.at[i, "Boss Completion"])
+            total_marks_obtained += df.at[i, "Marks"]
+            st.progress(df.at[i, "Boss Completion"] / 100)
+            st.write(f"Adjusted Marks: {df.at[i, 'Marks']:.2f}")
+
+        st.subheader(f"Total Marks Obtained: {total_marks_obtained:.2f}")
+
+        if st.button("Finalize Review"):
+            save_data(df)
+            st.success("Boss's review has been saved!")
+
+# Export Report Section
 st.sidebar.header("Export Report")
 
-# Convert session state data to DataFrame for export
-export_df = pd.DataFrame(st.session_state["tasks"], columns=["Task", "User Completion", "Officer Completion", "Marks"])
-
-# CSV Download
-csv = export_df.to_csv(index=False).encode('utf-8')
+# Convert DataFrame to CSV for download
+csv = df.to_csv(index=False).encode("utf-8")
 st.sidebar.download_button(
     label="Download CSV",
     data=csv,
     file_name="task_report.csv",
     mime="text/csv",
-)
-
-# PDF Download
-pdf_buffer = generate_pdf(export_df)
-st.sidebar.download_button(
-    label="Download PDF",
-    data=pdf_buffer,
-    file_name="task_report.pdf",
-    mime="application/pdf",
 )
