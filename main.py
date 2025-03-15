@@ -51,7 +51,7 @@ elif role == "Reporting Officer":
             task["Marks"] = calculate_marks(task["Officer Completion"])
             total_marks_obtained += task["Marks"]
             st.progress(task["Officer Completion"] / 100)
-            st.write(f"📊 **Mark: {task['Marks']} of 5**")  # Displaying mark in "Mark: X of 5" format
+            st.write(f" **Mark: {task['Marks']} of 5**")  # Displaying mark in "Mark: X of 5" format
 
         st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained}**")
 
