@@ -60,28 +60,30 @@ if role == "Employee":
     num_tasks = st.number_input("How many tasks do you want to add?", min_value=1, step=1)
     new_tasks = []
     for i in range(int(num_tasks)):
-        task_name = st.text_input(f"Enter name for Task {i+1}")
-        if task_name:
-            new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+        task_name = st.text_input(f"Enter name for Task {i+1}", key=f"task_{i}")
+        new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+    
     if st.button("Add Tasks") and new_tasks:
         df = pd.concat([df, pd.DataFrame(new_tasks)], ignore_index=True)
         save_data(df)
         st.success("Tasks added successfully!")
-    
-    st.header("Enter Completion Percentages")
-    for i in range(len(df)):
-        df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
-    
-    if st.button("Submit Completion"):
-        save_data(df)
-        st.success("Task completion updated successfully!")
+        st.experimental_rerun()
+
+    if not df.empty:
+        st.header("Enter Completion Percentages")
+        for i in range(len(df)):
+            df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
+        
+        if st.button("Submit Completion"):
+            save_data(df)
+            st.success("Task completion updated successfully!")
 
 elif role == "Reporting Officer":
     st.header("Reporting Officer Review & Adjustments")
     total_marks_obtained = 0
     for i in range(len(df)):
         st.write(f"{df.at[i, 'Task']}: {df.at[i, 'User Completion']}% completed")
-        df.at[i, "Officer Completion"] = st.slider(f"Adjust completion for {df.at[i, 'Task']}:", 0, 100, int(df.at[i, "User Completion"]), 5)
+        df.at[i, "Officer Completion"] = st.slider(f"Adjust completion for {df.at[i, 'Task']}", 0, 100, int(df.at[i, "User Completion"]), 5)
         df.at[i, "Marks"] = calculate_marks(df.at[i, "Officer Completion"])
         total_marks_obtained += df.at[i, "Marks"]
         st.progress(df.at[i, "Officer Completion"] / 100)
