@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-from fpdf import FPDF
-import io
 
 # Initialize session state for tasks
 if "tasks" not in st.session_state:
@@ -10,40 +8,6 @@ if "tasks" not in st.session_state:
 # Function to calculate marks
 def calculate_marks(completion_percentage, total_marks=5):
     return round(total_marks * (completion_percentage / 100), 2)
-
-# Function to generate a PDF report
-def generate_pdf():
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    
-    # Title
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Task Completion Report", ln=True, align="C")
-    pdf.ln(10)
-    
-    # Table Header
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(60, 10, "Task", 1, 0, "C")
-    pdf.cell(40, 10, "User (%)", 1, 0, "C")
-    pdf.cell(40, 10, "Officer (%)", 1, 0, "C")
-    pdf.cell(40, 10, "Marks", 1, 1, "C")
-    
-    # Table Data
-    pdf.set_font("Arial", size=12)
-    if "tasks" in st.session_state and st.session_state["tasks"]:
-        for task in st.session_state["tasks"]:
-            pdf.cell(60, 10, task["Task"], 1, 0, "C")
-            pdf.cell(40, 10, f"{task['User Completion']}%", 1, 0, "C")
-            pdf.cell(40, 10, f"{task['Officer Completion']}%", 1, 0, "C")
-            pdf.cell(40, 10, str(task["Marks"]), 1, 1, "C")
-    
-    # Generate PDF as BytesIO object
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output, "F")  # Writes to the buffer
-    pdf_output.seek(0)  # Move to start of the buffer
-    
-    return pdf_output
 
 # User authentication
 st.sidebar.header("🔑 Login")
@@ -103,7 +67,3 @@ if st.session_state["tasks"]:
     # CSV Export
     csv = df.to_csv(index=False).encode("utf-8")
     st.sidebar.download_button("📂 Download CSV", data=csv, file_name="task_report.csv", mime="text/csv")
-
-    # PDF Export
-    pdf_data = generate_pdf()
-    st.sidebar.download_button("📄 Download PDF", data=pdf_data, file_name="task_report.pdf", mime="application/pdf")
