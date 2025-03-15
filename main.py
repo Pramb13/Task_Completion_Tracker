@@ -11,7 +11,12 @@ data_file = "task_data.csv"
 def load_data():
     """Load task data from a CSV file or initialize if not exists."""
     if os.path.exists(data_file):
-        return pd.read_csv(data_file)
+        df = pd.read_csv(data_file)
+        required_columns = ["Task", "User Completion", "Officer Completion", "Marks"]
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = 0 if col in ["User Completion", "Officer Completion", "Marks"] else ""
+        return df
     else:
         return pd.DataFrame(columns=["Task", "User Completion", "Officer Completion", "Marks"])
 
@@ -27,15 +32,14 @@ def generate_pdf(df):
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
     pdf.setTitle("Task Completion Report")
-
     pdf.drawString(100, 750, "Task Completion Report")
     pdf.drawString(100, 730, "-" * 40)
-
     y_position = 710
     for i, row in df.iterrows():
-        pdf.drawString(100, y_position, f"{row['Task']}: {row['Officer Completion']}% completed, Marks: {row['Marks']:.2f}")
+        officer_completion = row.get('Officer Completion', 0)
+        marks = row.get('Marks', 0)
+        pdf.drawString(100, y_position, f"{row['Task']}: {officer_completion}% completed, Marks: {marks:.2f}")
         y_position -= 20
-
     pdf.save()
     buffer.seek(0)
     return buffer
@@ -53,14 +57,17 @@ st.write("This app tracks task completion reviewed by the Reporting Officer.")
 
 if role == "Employee":
     st.header("Add New Tasks")
-    
-    # Add a new task
-    new_task = st.text_input("Enter Task Name")
-    if st.button("Add Task") and new_task:
-        df = df.append({"Task": new_task, "User Completion": 0, "Officer Completion": 0, "Marks": 0}, ignore_index=True)
+    num_tasks = st.number_input("How many tasks do you want to add?", min_value=1, step=1)
+    new_tasks = []
+    for i in range(int(num_tasks)):
+        task_name = st.text_input(f"Enter name for Task {i+1}")
+        if task_name:
+            new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+    if st.button("Add Tasks") and new_tasks:
+        df = pd.concat([df, pd.DataFrame(new_tasks)], ignore_index=True)
         save_data(df)
-        st.success(f"Task '{new_task}' added successfully!")
-
+        st.success("Tasks added successfully!")
+    
     st.header("Enter Completion Percentages")
     for i in range(len(df)):
         df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
@@ -81,7 +88,6 @@ elif role == "Reporting Officer":
         st.write(f"Adjusted Marks: {df.at[i, 'Marks']:.2f}")
     
     st.subheader(f"Total Marks Obtained: {total_marks_obtained:.2f}")
-
     if st.button("Finalize Review"):
         save_data(df)
         st.success("Reporting Officer's review has been saved!")
