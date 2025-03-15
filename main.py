@@ -69,7 +69,7 @@ if role == "Employee":
                 new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
         
         if st.button("Add Tasks") and new_tasks:
-            df = pd.concat([df, pd.DataFrame(new_tasks)], ignore_index=True)
+            df = pd.DataFrame(new_tasks)
             save_data(df)
             st.session_state["tasks_added"] = True
             st.rerun()
