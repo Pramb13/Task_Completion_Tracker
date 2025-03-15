@@ -76,6 +76,7 @@ if role == "Employee":
     else:
         st.header("Enter Completion Percentages")
         for i in range(len(df)):
+            st.write(f"**{df.at[i, 'Task']}**")
             df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
         
         if st.button("Submit Completion"):
@@ -86,7 +87,7 @@ elif role == "Reporting Officer":
     st.header("Reporting Officer Review & Adjustments")
     total_marks_obtained = 0
     for i in range(len(df)):
-        st.write(f"{df.at[i, 'Task']}: {df.at[i, 'User Completion']}% completed")
+        st.write(f"**{df.at[i, 'Task']}**: {df.at[i, 'User Completion']}% completed")
         df.at[i, "Officer Completion"] = st.slider(f"Adjust completion for {df.at[i, 'Task']}", 0, 100, int(df.at[i, "User Completion"]), 5)
         df.at[i, "Marks"] = calculate_marks(df.at[i, "Officer Completion"])
         total_marks_obtained += df.at[i, "Marks"]
