@@ -45,22 +45,28 @@ if role == "Employee":
     
     if not st.session_state["tasks_added"]:
         st.header("Add New Tasks")
-        num_tasks = st.number_input("How many tasks do you want to add?", min_value=1, step=1)
+        num_tasks = st.number_input("How many tasks do you have to complete?", min_value=1, step=1)
         new_tasks = []
+        
         for i in range(int(num_tasks)):
             task_name = st.text_input(f"Enter name for Task {i+1}", key=f"task_{i}")
+            completion = st.slider(f"Enter completion percentage for {task_name}", 0, 100, 0, 5, key=f"completion_{i}")
+            
             if task_name:
-                new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+                new_tasks.append({"Task": task_name, "User Completion": completion, "Officer Completion": 0, "Marks": 0})
         
         if st.button("Add Tasks") and new_tasks:
             st.session_state["tasks"].extend(new_tasks)
             st.session_state["tasks_added"] = True
             st.rerun()
     else:
-        st.header("Enter Completion Percentages")
+        st.header("Your Tasks and Completion Status")
         for i in range(len(st.session_state["tasks"])):
             st.write(f"**{st.session_state['tasks'][i]['Task']}**")
-            st.session_state["tasks"][i]["User Completion"] = st.slider(f'{st.session_state["tasks"][i]["Task"]} Completion', 0, 100, int(st.session_state["tasks"][i]["User Completion"]), 5)
+            st.session_state["tasks"][i]["User Completion"] = st.slider(
+                f'{st.session_state["tasks"][i]["Task"]} Completion', 0, 100, 
+                int(st.session_state["tasks"][i]["User Completion"]), 5
+            )
         
         if st.button("Submit Completion"):
             st.success("Task completion updated successfully!")
@@ -70,7 +76,10 @@ elif role == "Reporting Officer":
     total_marks_obtained = 0
     for i in range(len(st.session_state["tasks"])):
         st.write(f"**{st.session_state['tasks'][i]['Task']}**: {st.session_state['tasks'][i]['User Completion']}% completed")
-        st.session_state["tasks"][i]["Officer Completion"] = st.slider(f"Adjust completion for {st.session_state['tasks'][i]['Task']}", 0, 100, int(st.session_state["tasks"][i]["User Completion"]), 5)
+        st.session_state["tasks"][i]["Officer Completion"] = st.slider(
+            f"Adjust completion for {st.session_state['tasks'][i]['Task']}", 0, 100, 
+            int(st.session_state["tasks"][i]["User Completion"]), 5
+        )
         st.session_state["tasks"][i]["Marks"] = calculate_marks(st.session_state["tasks"][i]["Officer Completion"])
         total_marks_obtained += st.session_state["tasks"][i]["Marks"]
         st.progress(st.session_state["tasks"][i]["Officer Completion"] / 100)
