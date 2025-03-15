@@ -56,20 +56,23 @@ st.title("Task Completion Tracker")
 st.write("This app tracks task completion reviewed by the Reporting Officer.")
 
 if role == "Employee":
-    st.header("Add New Tasks")
-    num_tasks = st.number_input("How many tasks do you want to add?", min_value=1, step=1)
-    new_tasks = []
-    for i in range(int(num_tasks)):
-        task_name = st.text_input(f"Enter name for Task {i+1}", key=f"task_{i}")
-        new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+    if df.empty or "tasks_added" not in st.session_state:
+        st.session_state["tasks_added"] = False
     
-    if st.button("Add Tasks") and new_tasks:
-        df = pd.concat([df, pd.DataFrame(new_tasks)], ignore_index=True)
-        save_data(df)
-        st.success("Tasks added successfully!")
-        st.experimental_rerun()
-
-    if not df.empty:
+    if not st.session_state["tasks_added"]:
+        st.header("Add New Tasks")
+        num_tasks = st.number_input("How many tasks do you want to add?", min_value=1, step=1)
+        new_tasks = []
+        for i in range(int(num_tasks)):
+            task_name = st.text_input(f"Enter name for Task {i+1}", key=f"task_{i}")
+            new_tasks.append({"Task": task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+        
+        if st.button("Add Tasks") and new_tasks:
+            df = pd.concat([df, pd.DataFrame(new_tasks)], ignore_index=True)
+            save_data(df)
+            st.session_state["tasks_added"] = True
+            st.experimental_rerun()
+    else:
         st.header("Enter Completion Percentages")
         for i in range(len(df)):
             df.at[i, "User Completion"] = st.slider(f'{df.at[i, "Task"]} Completion', 0, 100, int(df.at[i, "User Completion"]), 5)
