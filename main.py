@@ -24,7 +24,7 @@ df = load_data()
 
 # User authentication
 st.sidebar.header("Login")
-role = st.sidebar.radio("Select your role:", ["Employee", "Boss"])
+role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer"])
 
 # Title
 st.title("Task Completion Tracker")
@@ -40,7 +40,7 @@ if role == "Employee":
         save_data(df)
         st.success("Task completion updated successfully!")
 
-elif role == "Boss":
+elif role == "Reporting Officer":
     st.header("Boss Review & Adjustments")
     total_marks_obtained = 0
     for i in range(len(df)):
