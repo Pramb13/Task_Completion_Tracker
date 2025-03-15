@@ -1,15 +1,14 @@
 import streamlit as st
 import pandas as pd
 
-# Set page config with new logo
+# Set page config with logo
 st.set_page_config(page_title="Task Completion Tracker", page_icon="📊")
 
-# Display two logos
-col1, col2, col3 = st.columns([1, 5, 1])
+# Add logos
+col1, col2 = st.columns([1, 5])
 with col1:
-    st.image("logo1.png", width=80)  # Replace with your first logo
-with col3:
-    st.image("logo2.png", width=80)  # Replace with your second logo
+    st.image("your_logo.png", width=80)  # Replace with your logo file
+
 with col2:
     st.title("📊 Task Completion Tracker")
 
