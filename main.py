@@ -8,8 +8,8 @@ if "submitted" not in st.session_state:
     st.session_state["submitted"] = False
 
 # Function to calculate marks
-def calculate_marks(completion_percentage, total_marks=5):
-    return round(total_marks * (completion_percentage / 100), 2)
+def calculate_marks(completion_percentage):
+    return round(5 * (completion_percentage / 100), 2)  # Each task is out of 5
 
 # Sidebar Logo & Login Section
 st.sidebar.image("https://companieslogo.com/img/orig/GMDCLTD.NS-26174231.png?t=1720244492", width=100)
@@ -18,7 +18,6 @@ role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer"])
 
 # Main Title
 st.title("📊 Task Completion Tracker")
-st.markdown("### A streamlined way to track and evaluate task progress.")
 
 # Employee Section
 if role == "Employee":
@@ -33,25 +32,20 @@ if role == "Employee":
                 st.rerun()
             else:
                 st.warning("Task already exists! Please enter a different task.")
-    elif st.session_state["submitted"]:
-        st.warning("Tasks have been submitted. You cannot add or edit them now.")
-    else:
-        st.warning("Maximum limit of 6 tasks reached!")
-
-    # Update completion percentages
-    if st.session_state["tasks"] and not st.session_state["submitted"]:
+    
+    if st.session_state["tasks"]:
         for task in st.session_state["tasks"]:
             task["User Completion"] = st.slider(f'📌 {task["Task"]} Completion', 0, 100, task["User Completion"], 5)
-
+        
         if st.button("✅ Submit Completion"):
             st.session_state["submitted"] = True
-            st.success("Task completion submitted successfully! You cannot edit further.")
+            st.success("Task completion updated successfully!")
+            st.rerun()
 
 # Reporting Officer Section
 elif role == "Reporting Officer":
     st.header("📋 Review & Adjust Task Completion")
     total_marks_obtained = 0
-    max_marks = len(st.session_state["tasks"]) * 5  # Max Marks based on number of tasks
 
     if st.session_state["tasks"]:
         for task in st.session_state["tasks"]:
@@ -60,21 +54,19 @@ elif role == "Reporting Officer":
             task["Marks"] = calculate_marks(task["Officer Completion"])
             total_marks_obtained += task["Marks"]
             st.progress(task["Officer Completion"] / 100)
-            st.write(f"🔹 Marks: **{task['Marks']} out of 5**")
+            st.write(f"🔹 Adjusted Marks: **{task['Marks']}** out of 5")
 
-        st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained} out of {max_marks}**")
+        st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained} out of 30**")
 
         if st.button("✔️ Finalize Review"):
-            st.session_state["submitted"] = True
             st.success("Reporting Officer's review has been saved!")
 
-# Export Report Section
+# Export CSV Section
 st.sidebar.header("📥 Export Report")
 
 if st.session_state["tasks"]:
     df = pd.DataFrame(st.session_state["tasks"])
-    df["Total Marks"] = df["Marks"].sum()
+    df["Total Marks"] = sum(task["Marks"] for task in st.session_state["tasks"])  # Always out of 30
 
-    # CSV Export
     csv = df.to_csv(index=False).encode("utf-8")
     st.sidebar.download_button("📂 Download CSV", data=csv, file_name="task_report.csv", mime="text/csv")
