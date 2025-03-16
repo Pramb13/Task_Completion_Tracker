@@ -5,7 +5,7 @@ import pandas as pd
 if "tasks" not in st.session_state:
     st.session_state["tasks"] = []
 if "submitted" not in st.session_state:
-    st.session_state["submitted"] = False  # Track if submission is done
+    st.session_state["submitted"] = False  # To disable task addition after submission
 
 # Function to calculate marks
 def calculate_marks(completion_percentage, total_marks=5):
@@ -28,19 +28,28 @@ if role == "Employee":
         new_task_name = st.text_input("Enter a new task name:")
         if st.button("➕ Add Task") and new_task_name:
             if len(st.session_state["tasks"]) < 6:  # Max 6 tasks allowed
-                st.session_state["tasks"].append({"Task": new_task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0})
+                st.session_state["tasks"].append(
+                    {"Task": new_task_name, "User Completion": 0, "Officer Completion": 0, "Marks": 0}
+                )
                 st.success(f"Task '{new_task_name}' added successfully!")
                 st.rerun()
 
-    # Update completion percentages
-    if st.session_state["tasks"]:
-        for i, task in enumerate(st.session_state["tasks"]):  # Add unique key to slider
-            task["User Completion"] = st.slider(f'📌 {task["Task"]} Completion', 0, 100, task["User Completion"], 5, key=f"user_{i}")
+    # Update completion percentages (Use session_state to avoid duplicate updates)
+    for i, task in enumerate(st.session_state["tasks"]):
+        if f"user_completion_{i}" not in st.session_state:
+            st.session_state[f"user_completion_{i}"] = task["User Completion"]
+        
+        st.session_state[f"user_completion_{i}"] = st.slider(
+            f'📌 {task["Task"]} Completion',
+            0, 100, st.session_state[f"user_completion_{i}"], 5, key=f"user_slider_{i}"
+        )
 
-        if not st.session_state["submitted"]:  # Only allow submission once
-            if st.button("✅ Submit Completion"):
-                st.session_state["submitted"] = True
-                st.success("✅ Task completion submitted successfully! You can no longer edit tasks.")
+    if not st.session_state["submitted"]:  # Only allow submission once
+        if st.button("✅ Submit Completion"):
+            for i, task in enumerate(st.session_state["tasks"]):
+                st.session_state["tasks"][i]["User Completion"] = st.session_state[f"user_completion_{i}"]
+            st.session_state["submitted"] = True
+            st.success("✅ Task completion submitted successfully! You can no longer edit tasks.")
 
 # Reporting Officer Section
 elif role == "Reporting Officer":
@@ -48,13 +57,23 @@ elif role == "Reporting Officer":
     total_marks_obtained = 0
 
     if st.session_state["tasks"]:
-        for i, task in enumerate(st.session_state["tasks"]):  # Add unique key to sliders
-            st.write(f"📌 **{task['Task']}**: {task['User Completion']}% completed by employee")
-            task["Officer Completion"] = st.slider(f"Adjust completion for {task['Task']}", 0, 100, task["User Completion"], 5, key=f"officer_{i}")
-            task["Marks"] = calculate_marks(task["Officer Completion"])
-            total_marks_obtained += task["Marks"]
-            st.progress(task["Officer Completion"] / 100)
-            st.write(f"🔹 Marks: **{task['Marks']} out of 5**")
+        for i, task in enumerate(st.session_state["tasks"]):
+            if f"officer_completion_{i}" not in st.session_state:
+                st.session_state[f"officer_completion_{i}"] = task["User Completion"]
+            
+            st.session_state[f"officer_completion_{i}"] = st.slider(
+                f"Adjust completion for {task['Task']}", 0, 100,
+                st.session_state[f"officer_completion_{i}"], 5, key=f"officer_slider_{i}"
+            )
+
+            marks = calculate_marks(st.session_state[f"officer_completion_{i}"])
+            total_marks_obtained += marks
+
+            st.progress(st.session_state[f"officer_completion_{i}"] / 100)
+            st.write(f"🔹 Marks: **{marks} out of 5**")
+
+            st.session_state["tasks"][i]["Officer Completion"] = st.session_state[f"officer_completion_{i}"]
+            st.session_state["tasks"][i]["Marks"] = marks
 
         st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained} out of 30**")
 
