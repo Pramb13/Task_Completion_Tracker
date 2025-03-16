@@ -12,7 +12,7 @@ def calculate_marks(completion_percentage, total_marks=5):
     return round(total_marks * (completion_percentage / 100), 2)
 
 # Sidebar Logo & Login Section
-st.sidebar.image("https://companieslogo.com/img/orig/GMDCLTD.NS-26174231.png?t=1720244492", width=200)
+st.sidebar.image("https://companieslogo.com/img/orig/GMDCLTD.NS-26174231.png?t=1720244492", width=100)
 st.sidebar.header("🔑 Login")
 role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer"])
 
@@ -51,6 +51,7 @@ if role == "Employee":
 elif role == "Reporting Officer":
     st.header("📋 Review & Adjust Task Completion")
     total_marks_obtained = 0
+    max_marks = len(st.session_state["tasks"]) * 5  # Max Marks based on number of tasks
 
     if st.session_state["tasks"]:
         for task in st.session_state["tasks"]:
@@ -59,9 +60,9 @@ elif role == "Reporting Officer":
             task["Marks"] = calculate_marks(task["Officer Completion"])
             total_marks_obtained += task["Marks"]
             st.progress(task["Officer Completion"] / 100)
-            st.write(f"**{task['Marks']}**")
+            st.write(f"🔹 Marks: **{task['Marks']} out of 5**")
 
-        st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained}**")
+        st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained} out of {max_marks}**")
 
         if st.button("✔️ Finalize Review"):
             st.session_state["submitted"] = True
