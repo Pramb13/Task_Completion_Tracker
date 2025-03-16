@@ -34,8 +34,8 @@ if role == "Employee":
 
     # Update completion percentages
     if st.session_state["tasks"]:
-        for task in st.session_state["tasks"]:
-            task["User Completion"] = st.slider(f'📌 {task["Task"]} Completion', 0, 100, task["User Completion"], 5)
+        for i, task in enumerate(st.session_state["tasks"]):  # Add unique key to slider
+            task["User Completion"] = st.slider(f'📌 {task["Task"]} Completion', 0, 100, task["User Completion"], 5, key=f"user_{i}")
 
         if not st.session_state["submitted"]:  # Only allow submission once
             if st.button("✅ Submit Completion"):
@@ -48,9 +48,9 @@ elif role == "Reporting Officer":
     total_marks_obtained = 0
 
     if st.session_state["tasks"]:
-        for task in st.session_state["tasks"]:
+        for i, task in enumerate(st.session_state["tasks"]):  # Add unique key to sliders
             st.write(f"📌 **{task['Task']}**: {task['User Completion']}% completed by employee")
-            task["Officer Completion"] = st.slider(f"Adjust completion for {task['Task']}", 0, 100, task["User Completion"], 5)
+            task["Officer Completion"] = st.slider(f"Adjust completion for {task['Task']}", 0, 100, task["User Completion"], 5, key=f"officer_{i}")
             task["Marks"] = calculate_marks(task["Officer Completion"])
             total_marks_obtained += task["Marks"]
             st.progress(task["Officer Completion"] / 100)
