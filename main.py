@@ -1,25 +1,17 @@
 import streamlit as st
 import pandas as pd
 
-# Set page config with title and icons
-st.set_page_config(page_title="Task Completion Tracker", page_icon="📊")
+# Set app-wide configuration
+st.set_page_config(page_title="Task Completion Tracker", page_icon="📊", layout="wide")
 
-# Display two logos
-col1, col2, col3 = st.columns([1, 5, 1])
-with col1:
-    st.image("logo1.png", width=80)  # Replace with your first logo
-with col3:
-    st.image("logo2.png", width=80)  # Replace with your second logo
-with col2:
-    st.title("📊 Task Completion Tracker")
+# Custom logo
+st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Example.svg/120px-Example.svg.png", width=80)
 
-st.markdown("### A streamlined way to track and evaluate task progress.")
-
-# Initialize session state for tasks
+# Initialize session state
 if "tasks" not in st.session_state:
     st.session_state["tasks"] = []
 if "submitted" not in st.session_state:
-    st.session_state["submitted"] = False  # Flag to prevent editing after submission
+    st.session_state["submitted"] = False
 
 # Function to calculate marks
 def calculate_marks(completion_percentage, total_marks=5):
@@ -28,6 +20,10 @@ def calculate_marks(completion_percentage, total_marks=5):
 # User authentication
 st.sidebar.header("🔑 Login")
 role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer"])
+
+# Title
+st.title("📊 Task Completion Tracker")
+st.markdown("### A streamlined way to track and evaluate task progress.")
 
 # Employee Section
 if role == "Employee":
@@ -47,17 +43,18 @@ if role == "Employee":
         else:
             st.warning("⚠️ Maximum limit of 6 tasks reached!")
 
-        # Update completion percentages (only before submission)
+        # Update completion percentages
         if st.session_state["tasks"]:
             for task in st.session_state["tasks"]:
                 task["User Completion"] = st.slider(f'📌 {task["Task"]} Completion', 0, 100, task["User Completion"], 5)
 
-            if st.button("✅ Submit Tasks"):
-                st.session_state["submitted"] = True  # Lock editing after submission
-                st.success("Tasks submitted successfully! You can no longer edit them.")
+            if st.button("✅ Submit Completion"):
+                st.session_state["submitted"] = True  # Lock editing
+                st.success("✅ Task completion submitted successfully! You can no longer add or edit tasks.")
+                st.rerun()  # Refresh page to lock UI
 
     else:
-        st.warning("🔒 You have already submitted your tasks. Editing is disabled.")
+        st.warning("⚠️ You have already submitted your tasks and cannot add or edit them anymore.")
 
 # Reporting Officer Section
 elif role == "Reporting Officer":
@@ -71,22 +68,19 @@ elif role == "Reporting Officer":
             task["Marks"] = calculate_marks(task["Officer Completion"])
             total_marks_obtained += task["Marks"]
             st.progress(task["Officer Completion"] / 100)
-            st.write(f"📊 **Mark: {task['Marks']} of 5**")  # Displaying mark in "Mark: X of 5" format
+            st.write(f"🔹 **{task['Marks']}**")  # Display only Marks
 
         st.subheader(f"🏆 Total Marks Obtained: **{total_marks_obtained}**")
 
         if st.button("✔️ Finalize Review"):
-            st.success("Reporting Officer's review has been saved!")
+            st.success("✅ Reporting Officer's review has been saved!")
 
 # Export Report Section
 st.sidebar.header("📥 Export Report")
 
 if st.session_state["tasks"]:
     df = pd.DataFrame(st.session_state["tasks"])
-
-    # Add total marks row
-    total_marks_row = pd.DataFrame([{"Task": "Total Marks", "User Completion": "", "Officer Completion": "", "Marks": total_marks_obtained}])
-    df = pd.concat([df, total_marks_row], ignore_index=True)
+    df["Total Marks"] = df["Marks"].sum()  # Add total marks column
 
     # CSV Export
     csv = df.to_csv(index=False).encode("utf-8")
