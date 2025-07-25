@@ -1,135 +1,115 @@
 import streamlit as st
 import pandas as pd
-import json
+from datetime import datetime
 
-# Load users from JSON
-@st.cache_data
-def load_users():
-    with open("users.json", "r") as f:
-        return json.load(f)
+st.set_page_config("Task Completion Tracker", layout="wide")
 
-users = load_users()
+# --- Dummy Credentials ---
+users = {
+    "employee1": {"password": "emp123", "role": "Employee"},
+    "officer1": {"password": "off123", "role": "Officer"},
+}
 
-# Session state initialization
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-    st.session_state.role = None
+# --- Session State ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
     st.session_state.username = ""
+    st.session_state.role = ""
+if "tasks" not in st.session_state:
     st.session_state.tasks = []
 
-# Login section
+# --- Login ---
 def login():
-    st.title("🔐 Login to Task Tracker")
+    st.title("🔐 Login")
+
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
         if username in users and users[username]["password"] == password:
-            st.session_state.authenticated = True
-            st.session_state.role = users[username]["role"]
+            st.session_state.logged_in = True
             st.session_state.username = username
-            st.success(f"Welcome, {username}! Role: {st.session_state.role}")
+            st.session_state.role = users[username]["role"]
             st.experimental_rerun()
         else:
-            st.error("Invalid username or password.")
+            st.error("❌ Invalid credentials")
 
-# Logout
-def logout():
-    st.session_state.authenticated = False
-    st.session_state.role = None
-    st.session_state.username = ""
-    st.experimental_rerun()
+# --- Employee View ---
+def employee_view():
+    st.title(f"👷 Employee Dashboard - {st.session_state.username}")
 
-# Task structure normalization
-for task in st.session_state.tasks:
-    task.setdefault("User Completion", 0)
-    task.setdefault("Officer Completion", 0)
-    task.setdefault("Client Feedback", "")
-    task.setdefault("Status", "Draft")
-    task.setdefault("Marks", 0)
+    with st.form("add_task_form"):
+        task_name = st.text_input("Task Name")
+        description = st.text_area("Description")
+        submitted = st.form_submit_button("Submit Task")
 
-# Main app logic
-def main_app():
-    role = st.session_state.role
-    st.sidebar.title(f"👤 Logged in as: {st.session_state.username}")
-    st.sidebar.button("Logout", on_click=logout)
+        if submitted and task_name:
+            st.session_state.tasks.append({
+                "Employee": st.session_state.username,
+                "Task Name": task_name,
+                "Description": description,
+                "Status": "Draft",
+                "Marks": 0,
+                "Reviewed": False,
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            st.success("✅ Task submitted!")
 
-    # Employee Section
-    if role == "Employee":
-        st.title("📝 Submit Your Tasks")
-        with st.form("task_form"):
-            task_name = st.text_input("Task Name")
-            user_completion = st.slider("Your Completion (%)", 0, 100, 0)
-            submitted = st.form_submit_button("Add Task")
-            if submitted and task_name:
-                st.session_state["tasks"].append({
-                    "Task": task_name,
-                    "User Completion": user_completion,
-                    "Officer Completion": 0,
-                    "Client Feedback": "",
-                    "Status": "Draft",
-                    "Marks": 0
-                })
-                st.success("✅ Task added successfully!")
+    st.markdown("---")
+    st.subheader("📋 Your Tasks")
 
-        st.subheader("🕒 Your Draft Tasks")
-        for i, task in enumerate(st.session_state["tasks"]):
-            if task.get("Status") == "Draft":
-                st.markdown(f"**{task['Task']}**")
-                st.progress(task["User Completion"])
-                if st.button("Submit for Review", key=f"submit_{i}"):
-                    task["Status"] = "Submitted"
-                    st.success(f"✅ '{task['Task']}' submitted for officer review.")
+    for i, task in enumerate(st.session_state.tasks):
+        if task["Employee"] == st.session_state.username:
+            st.markdown(f"**Task {i+1}: {task['Task Name']}**")
+            task["Status"] = st.selectbox(
+                f"Status for Task {i+1}", 
+                ["Draft", "Submitted", "Completed"], 
+                index=["Draft", "Submitted", "Completed"].index(task["Status"]),
+                key=f"status_{i}"
+            )
+            task["Marks"] = st.slider(
+                f"Marks (out of 10) for Task {i+1}", 
+                0, 10, int(task.get("Marks", 0)), 
+                key=f"marks_slider_{i}"
+            )
 
-    # Officer Section
-    elif role == "Reporting Officer":
-        st.title("🔍 Review Submitted Tasks")
-        submitted_tasks = [t for t in st.session_state["tasks"] if t["Status"] == "Submitted"]
-        if not submitted_tasks:
-            st.info("No submitted tasks yet.")
-        for i, task in enumerate(submitted_tasks):
-            st.markdown(f"### {task['Task']}")
-            st.write(f"Employee Completion: {task['User Completion']}%")
-            officer_completion = st.slider("Officer Completion", 0, 100, task["Officer Completion"], key=f"officer_slider_{i}")
-            marks = st.slider("Marks (0-10)", 0, 10, int(task["Marks"]), key=f"marks_{i}")
-            if st.button("Review Task", key=f"review_{i}"):
-                task["Officer Completion"] = officer_completion
-                task["Marks"] = marks
-                task["Status"] = "Reviewed"
-                st.success(f"🟢 Task '{task['Task']}' reviewed.")
+# --- Officer View ---
+def officer_view():
+    st.title(f"🧑‍💼 Reporting Officer Dashboard - {st.session_state.username}")
 
-    # Client Section
-    elif role == "Client":
-        st.title("💬 Client Feedback")
-        reviewed_tasks = [t for t in st.session_state["tasks"] if t["Status"] == "Reviewed"]
-        if not reviewed_tasks:
-            st.info("No tasks available for feedback.")
-        for i, task in enumerate(reviewed_tasks):
-            st.markdown(f"### {task['Task']}")
-            st.write(f"Completion by Officer: {task['Officer Completion']}%")
-            st.write(f"Marks: {task['Marks']}/10")
-            feedback = st.text_input("Feedback", key=f"feedback_{i}", value=task.get("Client Feedback", ""))
-            if st.button("Submit Feedback", key=f"submit_feedback_{i}"):
-                task["Client Feedback"] = feedback
-                task["Status"] = "Completed"
-                st.success(f"✅ Feedback submitted for '{task['Task']}'.")
+    st.subheader("📌 Tasks Pending Review")
 
-    # Admin Dashboard
-    elif role == "Dashboard":
-        st.title("📊 Admin Task Dashboard")
-        pending_tasks = [t for t in st.session_state["tasks"] if t["Status"] != "Completed"]
-        if not pending_tasks:
-            st.success("✅ All tasks completed.")
-        else:
-            st.warning(f"⚠️ {len(pending_tasks)} task(s) pending.")
-            df = pd.DataFrame(pending_tasks)
-            st.dataframe(df)
-            st.download_button("📥 Download Pending Tasks", df.to_csv(index=False), file_name="pending_tasks.csv")
+    reviewed_count = 0
+    for i, task in enumerate(st.session_state.tasks):
+        if task["Status"] == "Completed" and not task["Reviewed"]:
+            st.markdown(f"**From: {task['Employee']} | Task: {task['Task Name']}**")
+            st.markdown(f"> {task['Description']}")
+            st.markdown(f"Marks Given: {task['Marks']}")
+            if st.button(f"Mark Reviewed - Task {i+1}"):
+                st.session_state.tasks[i]["Reviewed"] = True
+                st.success("✅ Task marked as reviewed")
+                reviewed_count += 1
 
-# App routing
-if not st.session_state.authenticated:
+    if reviewed_count == 0:
+        st.info("No pending tasks to review.")
+
+    st.markdown("---")
+    st.subheader("📤 Export All Tasks")
+    if st.button("Download CSV"):
+        df = pd.DataFrame(st.session_state.tasks)
+        df.to_csv("tasks.csv", index=False)
+        st.download_button("📄 Click to Download", data=df.to_csv(index=False), file_name="tasks.csv", mime="text/csv")
+
+# --- Main ---
+if not st.session_state.logged_in:
     login()
 else:
-    main_app()
+    if st.button("Logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.session_state.role = ""
+        st.experimental_rerun()
 
-st.markdown("---")
-st.caption("🔒 Task Completion Tracker with Login | © 2025")
+    if st.session_state.role == "Employee":
+        employee_view()
+    elif st.session_state.role == "Officer":
+        officer_view()
