@@ -1,133 +1,99 @@
 import streamlit as st
 import pandas as pd
+import os
 
-# ---------- Session State Initialization ----------
-if "tasks" not in st.session_state:
-    st.session_state["tasks"] = []
-if "submitted" not in st.session_state:
-    st.session_state["submitted"] = False
-if "reviewed" not in st.session_state:
-    st.session_state["reviewed"] = False
-if "finalized" not in st.session_state:
-    st.session_state["finalized"] = False
+# CSV path
+CSV_PATH = "task_data.csv"
 
-# ---------- Function Definitions ----------
-def calculate_marks(completion_percentage, total_marks=5):
-    return round(total_marks * (completion_percentage / 100), 2)
+# Create default DataFrame if CSV doesn't exist
+if not os.path.exists(CSV_PATH):
+    df = pd.DataFrame(columns=[
+        "Task", "Description", "User Completion", "Officer Completion",
+        "Marks", "Client Approval", "Status"
+    ])
+    df.to_csv(CSV_PATH, index=False)
 
-def get_status(task):
-    if task["Officer Completion"] == "":
-        return "Pending Review"
-    elif task["Client Approval"] == "":
-        return "Pending Client"
-    else:
-        return "Finalized"
+# Load data
+df = pd.read_csv(CSV_PATH)
 
-# ---------- UI Layout ----------
-st.sidebar.header("🔐 Login")
-role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer", "Client Reviewer"])
+st.title("📋 Task Completion Tracker")
 
-st.image("https://companieslogo.com/img/orig/GMDCLTD.NS-26174231.png?t=1720244492", width=100)
-st.title("📊 Task Completion Tracker")
-st.markdown("### A streamlined system to track, review, and finalize tasks.")
+role = st.sidebar.selectbox("Login as", ["Employee", "Officer", "Client", "Dashboard"])
 
-# ---------- Employee View ----------
+# --- EMPLOYEE PANEL ---
 if role == "Employee":
-    st.header("📝 Add or Update Tasks")
-    if not st.session_state["submitted"]:
-        new_task = st.text_input("Enter a new task:")
-        if st.button("➕ Add Task") and new_task:
-            if len(st.session_state["tasks"]) < 6:
-                st.session_state["tasks"].append({
-                    "Task": new_task,
-                    "User Completion": 0,
-                    "Officer Completion": "",
-                    "Marks": 0,
-                    "Client Approval": "",
-                })
-                st.success(f"✅ Task '{new_task}' added!")
-                st.rerun()
+    st.header("👨‍💻 Employee Panel")
 
-    for i, task in enumerate(st.session_state["tasks"]):
-        if st.session_state["submitted"]:
-            st.write(f"📌 **{task['Task']}** - Submitted: {task['User Completion']}%")
-        else:
-            st.session_state["tasks"][i]["User Completion"] = st.slider(
-                f"📌 {task['Task']} Completion", 0, 100,
-                task["User Completion"], 5, key=f"user_{i}"
-            )
+    task = st.text_input("Enter Task Name")
+    description = st.text_area("Task Description (optional)")
+    completion = st.slider("Mark Your Completion (%)", 0, 100, 0)
 
-    if not st.session_state["submitted"]:
-        if st.button("✅ Submit Tasks"):
-            st.session_state["submitted"] = True
-            st.success("✅ Tasks submitted! Waiting for review.")
+    if st.button("Submit Task"):
+        new_row = {
+            "Task": task,
+            "Description": description,
+            "User Completion": completion,
+            "Officer Completion": 0,
+            "Marks": 0.0,
+            "Client Approval": "Pending",
+            "Status": "In Progress"
+        }
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        df.to_csv(CSV_PATH, index=False)
+        st.success("✅ Task submitted successfully!")
+        st.experimental_rerun()
 
-# ---------- Reporting Officer View ----------
-elif role == "Reporting Officer":
-    st.header("📋 Review Employee Tasks")
-    if not st.session_state["submitted"]:
-        st.warning("⚠️ No tasks submitted by employee yet.")
+# --- OFFICER PANEL ---
+elif role == "Officer":
+    st.header("🕵️ Reporting Officer Panel")
+
+    if df.empty:
+        st.warning("No tasks available.")
     else:
-        total_marks = 0
-        for i, task in enumerate(st.session_state["tasks"]):
-            st.write(f"📌 **{task['Task']}** - Employee: {task['User Completion']}%")
+        task_list = df["Task"].tolist()
+        selected_task = st.selectbox("Select Task to Review", task_list)
+        if selected_task:
+            task_index = df[df["Task"] == selected_task].index[0]
 
-            if task["Officer Completion"] == "":
-                task["Officer Completion"] = task["User Completion"]
+            officer_completion = st.slider("Officer Completion (%)", 0, 100, int(df.loc[task_index, "Officer Completion"]))
+            df.at[task_index, "Officer Completion"] = officer_completion
 
-            st.session_state["tasks"][i]["Officer Completion"] = st.slider(
-                f"Adjust Completion: {task['Task']}", 0, 100,
-                int(task["Officer Completion"]), 5, key=f"officer_{i}"
-            )
+            marks = round((df.loc[task_index, "User Completion"] + officer_completion) / 40, 2)
+            df.at[task_index, "Marks"] = marks
+            df.at[task_index, "Status"] = "Finalized"
 
-            marks = calculate_marks(task["Officer Completion"])
-            st.session_state["tasks"][i]["Marks"] = marks
-            total_marks += marks
-            st.progress(task["Officer Completion"] / 100)
-            st.write(f"🔹 Marks Given: **{marks}/5**")
+            if st.button("Submit Officer Review"):
+                df.to_csv(CSV_PATH, index=False)
+                st.success("✅ Officer review submitted!")
+                st.experimental_rerun()
 
-        st.subheader(f"🏆 Total Marks: {round(total_marks, 2)} / 30")
+# --- CLIENT PANEL ---
+elif role == "Client":
+    st.header("🤝 Client Review Panel")
 
-        if st.button("✔️ Finalize Officer Review"):
-            st.session_state["reviewed"] = True
-            st.success("✅ Officer review completed and saved!")
+    pending_df = df[df["Client Approval"] == "Pending"]
 
-# ---------- Client Reviewer View ----------
-elif role == "Client Reviewer":
-    st.header("🧾 Client Task Verification")
-    if not st.session_state["reviewed"]:
-        st.warning("⚠️ Officer review is not yet finalized.")
+    if pending_df.empty:
+        st.info("🎉 No pending tasks for approval.")
     else:
-        for i, task in enumerate(st.session_state["tasks"]):
-            st.write(f"📌 **{task['Task']}** - Officer: {task['Officer Completion']}% - Marks: {task['Marks']}")
+        selected_task = st.selectbox("Select Task for Approval", pending_df["Task"].tolist())
+        if selected_task:
+            task_index = df[df["Task"] == selected_task].index[0]
+            st.write("🔍 Task Info:")
+            st.write(df.loc[task_index][["Task", "Description", "User Completion", "Officer Completion", "Marks"]])
 
-            if task["Client Approval"] == "":
-                approval = st.radio(
-                    f"Approve Task: {task['Task']}", ["Pending", "Approved", "Rejected"],
-                    key=f"client_{i}", index=0
-                )
-                st.session_state["tasks"][i]["Client Approval"] = approval
+            approve = st.radio("Client Approval", ["Approve", "Reject"])
+            if st.button("Submit Review"):
+                df.at[task_index, "Client Approval"] = approve
+                df.to_csv(CSV_PATH, index=False)
+                st.success(f"✅ Task {approve}d successfully!")
+                st.experimental_rerun()
 
-        if st.button("✅ Finalize Client Review"):
-            st.session_state["finalized"] = True
-            st.success("🎉 All tasks reviewed by client!")
+# --- DASHBOARD ---
+elif role == "Dashboard":
+    st.header("📊 Task Overview")
+    st.dataframe(df)
 
-# ---------- Dashboard ----------
-st.sidebar.header("📊 Task Dashboard")
-if st.session_state["tasks"]:
-    df = pd.DataFrame(st.session_state["tasks"])
-    df["Status"] = df.apply(get_status, axis=1)
-
-    st.subheader("📌 Task Overview")
-    st.dataframe(df[["Task", "User Completion", "Officer Completion", "Marks", "Client Approval", "Status"]])
-
-    pending = df[df["Status"] != "Finalized"]
-    if not pending.empty:
-        st.warning("⏳ Pending Tasks for Review or Approval")
-        st.dataframe(pending[["Task", "Status"]])
-
-    # Download
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.sidebar.download_button("📥 Download Report", data=csv, file_name="final_task_report.csv", mime="text/csv")
-else:
-    st.sidebar.info("No tasks available.")
+    with st.expander("📝 Pending Client Approvals"):
+        pending_df = df[df["Client Approval"] == "Pending"]
+        st.dataframe(pending_df[["Task", "User Completion", "Officer Completion", "Marks", "Status"]])
