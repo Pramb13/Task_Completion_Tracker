@@ -140,4 +140,4 @@ if st.session_state["tasks"]:
     st.sidebar.download_button("📂 Download CSV", data=csv, file_name="task_report.csv", mime="text/csv")
 
     pdf = generate_pdf(df)
-    st.sidebar.download_button("📄 Download PDF", data=pdf, file_name="task_report.pdf", mime="application/pdf")  . 
+    st.sidebar.download_button("📄 Download PDF", data=pdf, file_name="task_report.pdf", mime="application/pdf")  
