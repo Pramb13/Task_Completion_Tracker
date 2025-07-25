@@ -1,112 +1,141 @@
 import streamlit as st
 import json
-import os
 import pandas as pd
+import os
 
-# Load users from user.json
+# ---------- Load Users from JSON ----------
 @st.cache_data
 def load_users():
-    with open("user.json") as f:
+    with open("users.json") as f:
         return json.load(f)
 
-# Initialize task storage in session state
-if "tasks" not in st.session_state:
-    st.session_state["tasks"] = []
+# ---------- Authenticate ----------
+def authenticate(username, password):
+    users = load_users()
+    if username in users and users[username]["password"] == password:
+        return True, users[username]["role"]
+    return False, None
 
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["username"] = ""
-    st.session_state["role"] = ""
+# ---------- Save task progress ----------
+def save_task(username, progress):
+    df = pd.DataFrame([{"username": username, "task_progress": progress}])
+    if os.path.exists("employee_tasks.csv"):
+        existing = pd.read_csv("employee_tasks.csv")
+        existing = existing[existing["username"] != username]
+        df = pd.concat([existing, df], ignore_index=True)
+    df.to_csv("employee_tasks.csv", index=False)
 
-users = load_users()
+# ---------- Save officer review ----------
+def save_score(officer, employee, score):
+    df = pd.DataFrame([{"officer": officer, "employee": employee, "score": score}])
+    if os.path.exists("officer_scores.csv"):
+        existing = pd.read_csv("officer_scores.csv")
+        existing = existing[(existing["officer"] != officer) | (existing["employee"] != employee)]
+        df = pd.concat([existing, df], ignore_index=True)
+    df.to_csv("officer_scores.csv", index=False)
 
+# ---------- Save client review ----------
+def save_review(client, feedback):
+    df = pd.DataFrame([{"client": client, "feedback": feedback}])
+    if os.path.exists("client_feedback.csv"):
+        existing = pd.read_csv("client_feedback.csv")
+        existing = pd.concat([existing, df], ignore_index=True)
+    else:
+        existing = df
+    existing.to_csv("client_feedback.csv", index=False)
+
+# ---------- Login Page ----------
 def login():
-    st.title("🔐 Task Tracker Login")
+    st.title("🔐 Task Completion Tracker Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        for user in users:
-            if user["username"] == username and user["password"] == password:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.role = user["role"]
-                st.experimental_rerun()
-        st.error("❌ Invalid credentials")
+        authenticated, role = authenticate(username, password)
+        if authenticated:
+            st.session_state["username"] = username
+            st.session_state["role"] = role
+            st.success(f"Welcome {username} ({role})")
+            st.experimental_rerun()
+        else:
+            st.error("❌ Invalid username or password")
 
-def employee_dashboard():
-    st.title("👷 Employee Dashboard")
-    task_name = st.text_input("Task Name")
-    description = st.text_area("Task Description")
-    if st.button("Add Task"):
-        task = {
-            "Task": task_name,
-            "Description": description,
-            "Status": "Draft",
-            "Marks": None,
-            "Client_Review": ""
-        }
-        st.session_state.tasks.append(task)
-        st.success("✅ Task added!")
+# ---------- Employee Interface ----------
+def employee_page():
+    st.header("🧑‍💼 Employee Task Completion")
+    progress = st.slider("Select your task completion %", 0, 100, 50)
+    if st.button("Submit Progress"):
+        save_task(st.session_state["username"], progress)
+        st.success("✅ Task progress submitted successfully!")
 
-    for i, task in enumerate(st.session_state.tasks):
-        st.markdown(f"### Task {i+1}: {task['Task']}")
-        st.write(f"**Description:** {task['Description']}")
-        st.write(f"**Status:** {task['Status']}")
-        if task["Status"] == "Draft":
-            if st.button("Submit Task", key=f"submit_{i}"):
-                task["Status"] = "Submitted"
-                st.success("✅ Task submitted!")
-
-
-def officer_dashboard():
-    st.title("🧑‍💼 Reporting Officer Dashboard")
-
-    for i, task in enumerate(st.session_state.tasks):
-        if task["Status"] == "Submitted":
-            st.markdown(f"### Task {i+1}: {task['Task']}")
-            st.write(f"**Description:** {task['Description']}")
-            marks = st.slider("Marks (out of 10)", 0, 10, task["Marks"] or 0, key=f"marks_slider_{i}")
-            if st.button("Review & Approve", key=f"review_{i}"):
-                task["Marks"] = marks
-                task["Status"] = "Reviewed"
-                st.success("✅ Task reviewed and approved!")
-
-
-def client_dashboard():
-    st.title("📋 Client Task Review")
-    tasks = st.session_state.tasks
-
-    for i, task in enumerate(tasks):
-        if task["Status"] in ["Submitted", "Reviewed"]:
-            st.markdown(f"### Task {i+1}: {task['Task']}")
-            st.write(f"**Description:** {task['Description']}")
-            st.write(f"**Status:** {task['Status']}")
-            st.write(f"**Marks:** {task['Marks'] if task['Marks'] is not None else 'Not Scored'}")
-            st.write(f"**Previous Client Review:** {task.get('Client_Review', 'No review')}")
-            review = st.text_area("Add your review", value=task.get("Client_Review", ""), key=f"review_{i}")
-            if st.button("Submit Review", key=f"submit_review_{i}"):
-                task["Client_Review"] = review
-                st.success("✅ Review submitted!")
-
-
-def logout():
-    if st.sidebar.button("🔓 Logout"):
-        for k in ["logged_in", "username", "role"]:
-            st.session_state[k] = False if k == "logged_in" else ""
-        st.experimental_rerun()
-
-if not st.session_state.logged_in:
-    login()
-else:
-    st.sidebar.title("Navigation")
-    st.sidebar.write(f"👤 Logged in as: `{st.session_state.username}` ({st.session_state.role})")
-    logout()
-
-    if st.session_state.role == "employee":
-        employee_dashboard()
-    elif st.session_state.role == "officer":
-        officer_dashboard()
-    elif st.session_state.role == "client":
-        client_dashboard()
+# ---------- Reporting Officer Interface ----------
+def officer_page():
+    st.header("🕵️ Reporting Officer - Review Tasks")
+    if os.path.exists("employee_tasks.csv"):
+        data = pd.read_csv("employee_tasks.csv")
+        for _, row in data.iterrows():
+            st.subheader(f"Employee: {row['username']}")
+            st.write(f"Task Completion: {row['task_progress']}%")
+            score = st.slider(f"Score for {row['username']}", 0, 100, key=row['username'])
+            if st.button(f"Submit Score for {row['username']}", key="btn_"+row['username']):
+                save_score(st.session_state["username"], row['username'], score)
+                st.success(f"✅ Score submitted for {row['username']}")
     else:
-        st.error("❌ Unknown role.")
+        st.info("No employee task submissions found.")
+
+# ---------- Client Interface ----------
+def client_page():
+    st.header("📢 Client Feedback")
+    feedback = st.text_area("Your Review/Feedback")
+    if st.button("Submit Feedback"):
+        save_review(st.session_state["username"], feedback)
+        st.success("✅ Feedback submitted successfully!")
+
+# ---------- Admin Interface ----------
+def admin_page():
+    st.header("📊 Admin Dashboard")
+
+    if os.path.exists("employee_tasks.csv"):
+        st.subheader("📄 Employee Task Progress")
+        df = pd.read_csv("employee_tasks.csv")
+        st.dataframe(df)
+    else:
+        st.info("No employee data available.")
+
+    if os.path.exists("officer_scores.csv"):
+        st.subheader("📋 Officer Reviews")
+        df2 = pd.read_csv("officer_scores.csv")
+        st.dataframe(df2)
+    else:
+        st.info("No officer scores available.")
+
+    if os.path.exists("client_feedback.csv"):
+        st.subheader("🗣️ Client Feedback")
+        df3 = pd.read_csv("client_feedback.csv")
+        st.dataframe(df3)
+    else:
+        st.info("No client feedback available.")
+
+# ---------- Main App ----------
+def main():
+    if "username" not in st.session_state:
+        login()
+    else:
+        st.sidebar.title("Navigation")
+        st.sidebar.write(f"👤 {st.session_state['username']} ({st.session_state['role']})")
+
+        role = st.session_state["role"]
+        if role == "Employee":
+            employee_page()
+        elif role == "Reporting Officer":
+            officer_page()
+        elif role == "Client":
+            client_page()
+        elif role == "Dashboard":
+            admin_page()
+
+        if st.sidebar.button("🚪 Logout"):
+            st.session_state.clear()
+            st.experimental_rerun()
+
+if __name__ == "__main__":
+    main()
