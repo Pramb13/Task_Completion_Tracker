@@ -1,143 +1,120 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-from fpdf import FPDF
 
-# Initialize session state
+st.set_page_config(page_title="Task Completion Tracker", layout="wide")
+
+# Initialize session state for tasks and user roles
 if "tasks" not in st.session_state:
     st.session_state["tasks"] = []
-if "submitted" not in st.session_state:
-    st.session_state["submitted"] = False
 
-# Utility functions
-def calculate_marks(completion, total=5):
-    return round((completion / 100) * total, 2)
+# Normalize all tasks to prevent KeyError (even for old ones)
+for task in st.session_state["tasks"]:
+    task.setdefault("Task", "")
+    task.setdefault("Description", "")
+    task.setdefault("User Completion", 0)
+    task.setdefault("Officer Completion", 0)
+    task.setdefault("Client Feedback", "")
+    task.setdefault("Status", "Draft")
+    task.setdefault("Marks", 0)
 
-def generate_pdf(df):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Task Completion Report", ln=True, align="C")
-    pdf.set_font("Arial", size=12)
-    for i, row in df.iterrows():
-        line = f"{row['Task']} - Status: {row['Status']}, Marks: {row['Marks']}"
-        pdf.multi_cell(0, 10, line)
-    pdf.output("/tmp/report.pdf")
-    return open("/tmp/report.pdf", "rb").read()
+# Sidebar for role selection
+role = st.sidebar.radio("Select Your Role", ["Employee", "Reporting Officer", "Client", "Dashboard"])
 
-# Sidebar: Login role
-st.sidebar.header("🔐 Login")
-role = st.sidebar.radio("Select your role:", ["Employee", "Reporting Officer", "Client"])
-
-# Branding and title
-st.image("https://companieslogo.com/img/orig/GMDCLTD.NS-26174231.png?t=1720244492", width=100)
-st.title("📊 Task Completion Tracker")
-st.markdown("A powerful tool to track, evaluate, and approve task progress.")
-
-# Employee role
+# ------------------------ Employee View ------------------------
 if role == "Employee":
-    st.header("🧑‍💼 Submit Your Tasks")
-    if not st.session_state["submitted"]:
-        with st.expander("➕ Add Task"):
-            task_name = st.text_input("Task Name")
-            task_desc = st.text_area("Task Description")
-            if st.button("Add Task") and task_name:
-                if len(st.session_state["tasks"]) < 6:
-                    st.session_state["tasks"].append({
-                        "Task": task_name,
-                        "Description": task_desc,
-                        "User Completion": 0,
-                        "Officer Completion": 0,
-                        "Client Feedback": "",
-                        "Status": "Draft",
-                        "Marks": 0
-                    })
-                    st.success(f"✅ Task '{task_name}' added.")
-                    st.rerun()
-                else:
-                    st.warning("⚠️ Max 6 tasks allowed.")
+    st.header("👨‍💼 Employee Task Submission")
+
+    with st.form("employee_form"):
+        task_name = st.text_input("Task Name")
+        task_desc = st.text_area("Task Description")
+        submitted = st.form_submit_button("Add Task")
+        if submitted:
+            st.session_state["tasks"].append({
+                "Task": task_name,
+                "Description": task_desc,
+                "User Completion": 0,
+                "Officer Completion": 0,
+                "Client Feedback": "",
+                "Status": "Draft",
+                "Marks": 0
+            })
+            st.success("Task added successfully!")
+
+    st.subheader("📋 Your Draft Tasks")
 
     for i, task in enumerate(st.session_state["tasks"]):
-        if task["Status"] == "Draft":
-            st.subheader(task["Task"])
-            st.caption(task["Description"])
-            st.session_state[f"user_completion_{i}"] = st.slider(
-                "Your Completion (%)", 0, 100, task["User Completion"], 5, key=f"user_slider_{i}"
-            )
+        if task.get("Status", "Draft") == "Draft":
+            st.markdown(f"**Task {i+1}:** {task['Task']}")
+            st.write(task["Description"])
+            completion = st.slider("Completion %", 0, 100, task["User Completion"], key=f"user_slider_{i}")
+            st.session_state["tasks"][i]["User Completion"] = completion
+            if st.button("Submit Task", key=f"submit_task_{i}"):
+                st.session_state["tasks"][i]["Status"] = "Submitted"
+                st.success(f"Task {i+1} submitted.")
 
-    if not st.session_state["submitted"] and st.button("✅ Submit All Tasks"):
-        for i, task in enumerate(st.session_state["tasks"]):
-            if task["Status"] == "Draft":
-                task["User Completion"] = st.session_state[f"user_completion_{i}"]
-                task["Status"] = "Submitted"
-        st.session_state["submitted"] = True
-        st.success("🎉 Submitted! You can’t edit now.")
-
-    # Show status summary
-    st.markdown("### 📋 Task Status")
-    df = pd.DataFrame(st.session_state["tasks"])
-    st.dataframe(df[["Task", "Status", "Marks"]])
-
-# Reporting Officer role
+# ------------------------ Reporting Officer View ------------------------
 elif role == "Reporting Officer":
-    st.header("🕵️ Review Submitted Tasks")
-    pending_tasks = [t for t in st.session_state["tasks"] if t["Status"] == "Submitted"]
-    if not pending_tasks:
-        st.info("✅ All submitted tasks reviewed.")
-    else:
-        for i, task in enumerate(st.session_state["tasks"]):
-            if task["Status"] == "Submitted":
-                st.subheader(f"📌 {task['Task']}")
-                st.caption(task["Description"])
-                officer_completion = st.slider(
-                    "Adjust Completion (%)", 0, 100,
-                    task["User Completion"], 5, key=f"officer_slider_{i}"
-                )
-                marks = calculate_marks(officer_completion)
-                task["Officer Completion"] = officer_completion
-                task["Marks"] = marks
-                task["Status"] = "Reviewed"
-                st.success(f"Marks: {marks} / 5")
+    st.header("🧑‍💻 Review Submitted Tasks")
 
-    if st.button("✔️ Finalize All Reviews"):
-        st.success("✅ Review finalized!")
-
-# Client role
-elif role == "Client":
-    st.header("🧑‍💼 Client Review & Approval")
     for i, task in enumerate(st.session_state["tasks"]):
-        if task["Status"] == "Reviewed":
-            st.subheader(f"{task['Task']} ({task['Marks']}/5)")
-            st.caption(task["Description"])
-            feedback = st.text_area("Your Feedback", key=f"feedback_{i}")
-            status = st.selectbox("Approval", ["Pending", "Approved", "Rejected"], key=f"client_status_{i}")
-            if st.button(f"💾 Save Feedback for {task['Task']}", key=f"save_btn_{i}"):
-                task["Client Feedback"] = feedback
-                task["Status"] = status
-                st.success("✅ Feedback saved!")
+        if task.get("Status", "Draft") != "Draft" and task.get("Status") != "Reviewed":
+            st.markdown(f"**Task {i+1}:** {task['Task']}")
+            st.write(task["Description"])
+            st.write(f"Employee Completion: {task['User Completion']}%")
+            review = st.slider("Review Completion %", 0, 100, task["Officer Completion"], key=f"officer_slider_{i}")
+            marks = st.slider("Marks (out of 10)", 0, 10, task["Marks"], key=f"marks_slider_{i}")
+            st.session_state["tasks"][i]["Officer Completion"] = review
+            st.session_state["tasks"][i]["Marks"] = marks
+            if st.button("Mark as Reviewed", key=f"review_task_{i}"):
+                st.session_state["tasks"][i]["Status"] = "Reviewed"
+                st.success(f"Task {i+1} marked as reviewed.")
 
-# Dashboard View
-st.markdown("---")
-st.header("📊 Dashboard")
+# ------------------------ Client View ------------------------
+elif role == "Client":
+    st.header("🧑‍⚖️ Client Task Review")
 
-if st.session_state["tasks"]:
+    for i, task in enumerate(st.session_state["tasks"]):
+        if task.get("Status") == "Reviewed":
+            st.markdown(f"**Task {i+1}:** {task['Task']}")
+            st.write(task["Description"])
+            st.write(f"Employee Completion: {task['User Completion']}%")
+            st.write(f"Officer Review: {task['Officer Completion']}%")
+            st.write(f"Marks Awarded: {task['Marks']} / 10")
+            feedback = st.text_area("Client Feedback", task["Client Feedback"], key=f"client_feedback_{i}")
+            st.session_state["tasks"][i]["Client Feedback"] = feedback
+            if st.button("Finalize Task", key=f"finalize_task_{i}"):
+                st.session_state["tasks"][i]["Status"] = "Completed"
+                st.success(f"Task {i+1} marked as Completed.")
+
+# ------------------------ Dashboard ------------------------
+elif role == "Dashboard":
+    st.header("📊 Task Dashboard")
+
     df = pd.DataFrame(st.session_state["tasks"])
-    status_filter = st.selectbox("📌 Filter by Status", ["All"] + list(df["Status"].unique()))
-    if status_filter != "All":
-        df = df[df["Status"] == status_filter]
-    st.dataframe(df[["Task", "Status", "User Completion", "Officer Completion", "Marks", "Client Feedback"]])
-else:
-    st.info("No tasks found yet.")
 
-# Export Section
-st.sidebar.header("📥 Export Report")
-if st.session_state["tasks"]:
-    df = pd.DataFrame(st.session_state["tasks"])
-    total = sum(t["Marks"] for t in st.session_state["tasks"])
-    df.loc[len(df.index)] = ["Total", "", "", "", "", "", total]
+    if df.empty:
+        st.warning("No tasks added yet.")
+    else:
+        st.dataframe(df)
 
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.sidebar.download_button("📂 Download CSV", data=csv, file_name="task_report.csv", mime="text/csv")
+        # Count stats
+        pending_after_review = df[df["Status"] == "Reviewed"]
+        completed = df[df["Status"] == "Completed"]
+        draft = df[df["Status"] == "Draft"]
+        submitted = df[df["Status"] == "Submitted"]
 
-    pdf = generate_pdf(df)
-    st.sidebar.download_button("📄 Download PDF", data=pdf, file_name="task_report.pdf", mime="application/pdf")
+        st.subheader("🔎 Status Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📝 Draft", len(draft))
+        col2.metric("📤 Submitted", len(submitted))
+        col3.metric("🕵️ Reviewed", len(pending_after_review))
+        col4.metric("✅ Completed", len(completed))
+
+        # Downloadable CSV
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Task Report as CSV",
+            data=csv,
+            file_name='task_report.csv',
+            mime='text/csv',
+        )
