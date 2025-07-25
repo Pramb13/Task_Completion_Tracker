@@ -1,0 +1,6 @@
+{
+  "employee": {"password": "emp123", "role": "Employee"},
+  "officer": {"password": "off123", "role": "Reporting Officer"},
+  "client": {"password": "cli123", "role": "Client"},
+  "admin": {"password": "admin123", "role": "Dashboard"}
+}
