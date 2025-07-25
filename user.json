@@ -1,6 +1,17 @@
-{
-  "employee": {"password": "emp123", "role": "Employee"},
-  "officer": {"password": "off123", "role": "Reporting Officer"},
-  "client": {"password": "cli123", "role": "Client"},
-  "admin": {"password": "admin123", "role": "Dashboard"}
-}
+[
+  {
+    "username": "employee",
+    "password": "emp123",
+    "role": "employee"
+  },
+  {
+    "username": "officer",
+    "password": "off123",
+    "role": "officer"
+  },
+  {
+    "username": "client",
+    "password": "cli123",
+    "role": "client"
+  }
+]
