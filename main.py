@@ -9,7 +9,7 @@ if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Employee", "Task", "Description", "Completion", "Status", "Marks", "Reviewed"])
 
 # User login role
-role = st.sidebar.selectbox("Login as", ["Employee", "Officer"])
+role = st.sidebar.selectbox("Login as", ["Employee", "Officer", "Client"])
 
 # ------------------------ EMPLOYEE ------------------------ #
 if role == "Employee":
@@ -65,7 +65,9 @@ elif role == "Officer":
         else:
             st.success("🎉 All tasks have been reviewed.")
 
-       
+        st.subheader("📤 Export to CSV")
+        csv = st.session_state.df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download CSV", csv, "task_data.csv", "text/csv")
 
 # ------------------------ CLIENT ------------------------ #
 elif role == "Client":
@@ -91,7 +93,3 @@ elif role == "Client":
             st.metric("Total Reviewed Tasks", total_tasks)
             st.metric("Average Completion (%)", f"{avg_completion:.2f}")
             st.metric("Average Marks", f"{avg_marks:.2f}")
-
- st.subheader("📤 Export to CSV")
-        csv = st.session_state.df.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download CSV", csv, "task_data.csv", "text/csv")
