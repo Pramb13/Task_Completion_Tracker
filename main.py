@@ -65,6 +65,33 @@ elif role == "Officer":
         else:
             st.success("🎉 All tasks have been reviewed.")
 
-        st.subheader("📤 Export to CSV")
+       
+
+# ------------------------ CLIENT ------------------------ #
+elif role == "Client":
+    st.title("👨‍💼 Client Dashboard")
+
+    if st.session_state.df.empty:
+        st.info("ℹ️ No tasks available yet.")
+    else:
+        st.subheader("✅ Reviewed Tasks (Final View)")
+        reviewed_df = st.session_state.df[st.session_state.df["Reviewed"] == "Yes"]
+        
+        if reviewed_df.empty:
+            st.warning("⚠️ No reviewed tasks available yet.")
+        else:
+            st.dataframe(reviewed_df)
+
+            # Summary stats
+            st.subheader("📊 Project Summary")
+            avg_completion = reviewed_df["Completion"].mean()
+            total_tasks = len(reviewed_df)
+            avg_marks = reviewed_df["Marks"].mean()
+
+            st.metric("Total Reviewed Tasks", total_tasks)
+            st.metric("Average Completion (%)", f"{avg_completion:.2f}")
+            st.metric("Average Marks", f"{avg_marks:.2f}")
+
+ st.subheader("📤 Export to CSV")
         csv = st.session_state.df.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Download CSV", csv, "task_data.csv", "text/csv")
