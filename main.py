@@ -1,97 +1,109 @@
 import streamlit as st
-import pandas as pd
 
-# Page setup
-st.set_page_config(page_title="Task Completion Tracker", layout="wide")
+# ----------------------------
+# Session state initialization
+# ----------------------------
+if "companies" not in st.session_state:
+    st.session_state["companies"] = {}
 
-# Initialize session state
-if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["Company", "Employee", "Task", "Completion", "Marks", "Status", "Reviewed", "Boss_Comments"])
-
-# User role selection
-role = st.sidebar.selectbox("Login as", ["Employee", "Boss"])
-
-# Function to calculate marks
+# ----------------------------
+# Utility function
+# ----------------------------
 def calculate_task_marks(completion_percentage, total_marks=5):
     return total_marks * (completion_percentage / 100)
 
-# ------------------------ EMPLOYEE ------------------------ #
-if role == "Employee":
-    st.title("🧑‍💻 Employee Task Submission")
+# ----------------------------
+# App Title
+# ----------------------------
+st.title("📊 Task Completion Tracker")
 
-    company_name = st.text_input("🏢 Enter your Company Name")
-    employee_name = st.text_input("👤 Enter your Name")
-    task_title = st.text_input("📝 Task Title")
-    completion = st.slider("✅ Completion Percentage (%)", 0, 100, 0)
+# ----------------------------
+# Step 1: Client Login (Company Name)
+# ----------------------------
+company_name = st.text_input("Enter your Company Name")
 
-    if st.button("📩 Submit Task"):
-        if company_name and employee_name and task_title:
-            marks = calculate_task_marks(completion)
-            new_row = {
-                "Company": company_name,
-                "Employee": employee_name,
-                "Task": task_title,
-                "Completion": completion,
-                "Marks": marks,
-                "Status": "Submitted",
-                "Reviewed": "No",
-                "Boss_Comments": ""
+if company_name:
+    # Initialize company data if not exists
+    if company_name not in st.session_state["companies"]:
+        st.session_state["companies"][company_name] = {}
+
+    st.success(f"Welcome, {company_name} Client! You can manage your tasks here.")
+
+    # ----------------------------
+    # Step 2: Add / Manage Tasks
+    # ----------------------------
+    st.subheader("➕ Add New Task")
+    new_task = st.text_input("Task Name")
+    if st.button("Add Task"):
+        if new_task and new_task not in st.session_state["companies"][company_name]:
+            st.session_state["companies"][company_name][new_task] = {
+                "marks": 5,
+                "completion": 0,
+                "boss_adjustment": 0
             }
-            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_row])], ignore_index=True)
-            st.success("✅ Task submitted successfully!")
+            st.success(f"Task '{new_task}' added for {company_name} ✅")
+        elif new_task in st.session_state["companies"][company_name]:
+            st.warning("Task already exists!")
         else:
-            st.error("❌ Please fill all fields!")
+            st.warning("Enter a valid task name!")
 
-# ------------------------ BOSS ------------------------ #
-elif role == "Boss":
-    st.title("🧑‍💼 Boss Dashboard")
+    tasks = st.session_state["companies"][company_name]
 
-    company_name = st.text_input("🏢 Enter your Company Name to View Tasks")
+    if tasks:
+        # ----------------------------
+        # Step 3: Employee Input
+        # ----------------------------
+        st.header("👩‍💻 Employee Section: Enter Completion %")
+        for task, details in tasks.items():
+            completion = st.slider(
+                f"{task} Completion",
+                min_value=0,
+                max_value=100,
+                value=details["completion"],
+                step=5,
+                key=f"{task}_employee"
+            )
+            tasks[task]["completion"] = completion
 
-    if not company_name:
-        st.info("ℹ️ Please enter your company name to see tasks.")
-    else:
-        company_df = st.session_state.df[st.session_state.df["Company"] == company_name]
+        # ----------------------------
+        # Step 4: Boss Review Section
+        # ----------------------------
+        st.header("👨‍💼 Boss Review and Adjustments")
+        total_marks_obtained = 0
+        total_marks_possible = 0
 
-        if company_df.empty:
-            st.info("ℹ️ No tasks submitted yet for this company.")
-        else:
-            st.subheader(f"📋 All Tasks for {company_name}")
-            st.dataframe(company_df)
+        for task, details in tasks.items():
+            st.write(f"🔹 {task}: Employee entered {details['completion']}%")
 
-            st.subheader("⏳ Pending Reviews")
-            pending_df = company_df[company_df["Reviewed"] == "No"]
+            # Boss adjustment
+            boss_adjust = st.slider(
+                f"Boss adjust % for {task}",
+                min_value=0,
+                max_value=100,
+                value=details["completion"],
+                step=5,
+                key=f"{task}_boss"
+            )
 
-            if not pending_df.empty:
-                for i, row in pending_df.iterrows():
-                    with st.expander(f"Review Task: {row['Task']} by {row['Employee']}"):
-                        st.markdown(f"**Reported Completion:** {row['Completion']}%")
-                        st.markdown(f"**Auto Marks (Employee):** {row['Marks']:.2f}")
+            tasks[task]["boss_adjustment"] = boss_adjust
 
-                        # Boss adjusts percentage
-                        adjusted = st.slider(
-                            f"Boss, adjust completion % for {row['Task']} (Employee: {row['Employee']})",
-                            0, 100, int(row["Completion"])
-                        )
-                        adjusted_marks = calculate_task_marks(adjusted)
-                        st.write(f"✅ Adjusted Marks: {adjusted_marks:.2f}")
+            # Recalculate marks
+            task_marks = calculate_task_marks(boss_adjust, details["marks"])
+            total_marks_obtained += task_marks
+            total_marks_possible += details["marks"]
 
-                        # Approval & comments
-                        approved = st.radio(f"Approve {row['Task']}?", ("Yes", "No"), key=f"approve_{i}")
-                        comments = st.text_area(f"Boss's Comments for {row['Task']}", "", key=f"comments_{i}")
+            st.write(f"✅ Adjusted Marks: {task_marks:.2f}/{details['marks']}")
 
-                        if st.button(f"✅ Finalize Review Task ID {i}"):
-                            st.session_state.df.at[i, "Completion"] = adjusted
-                            st.session_state.df.at[i, "Marks"] = adjusted_marks
-                            st.session_state.df.at[i, "Reviewed"] = "Yes"
-                            st.session_state.df.at[i, "Status"] = "Approved" if approved == "Yes" else "Rejected"
-                            st.session_state.df.at[i, "Boss_Comments"] = comments
-                            st.success(f"✅ Task '{row['Task']}' reviewed successfully!")
+        # ----------------------------
+        # Step 5: Boss Final Review
+        # ----------------------------
+        st.subheader(f"📌 Total Marks Obtained: {total_marks_obtained:.2f} / {total_marks_possible}")
 
-            else:
-                st.success("🎉 All tasks have been reviewed for this company.")
+        approved = st.radio("Is the work approved?", ("Yes", "No"))
+        comments = st.text_area("Boss's Comments", "Enter your feedback here...")
 
-            # Export option
-            st.subheader("📤 Export to CSV")
-            csv = company_df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Company Task Data", csv, f"{company_name}_tasks.csv", "text/csv")
+        if st.button("Submit Report"):
+            st.success("Report Submitted Successfully ✅")
+            st.write("### Final Review")
+            st.write(f"**Approval Status:** {approved}")
+            st.write(f"**Boss's Comments:** {comments}")
