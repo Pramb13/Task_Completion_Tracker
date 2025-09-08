@@ -18,92 +18,118 @@ def calculate_task_marks(completion_percentage, total_marks=5):
 st.title("📊 Task Completion Tracker")
 
 # ----------------------------
-# Step 1: Client Login (Company Name)
+# Sidebar Role Selection
 # ----------------------------
-company_name = st.text_input("Enter your Company Name")
+role = st.sidebar.selectbox("Select Role", ["Client", "Employee", "Boss"])
 
-if company_name:
-    # Initialize company data if not exists
-    if company_name not in st.session_state["companies"]:
-        st.session_state["companies"][company_name] = {}
+# ----------------------------
+# CLIENT ROLE
+# ----------------------------
+if role == "Client":
+    st.header("👨‍💼 Client Section")
 
-    st.success(f"Welcome, {company_name} Client! You can manage your tasks here.")
+    company_name = st.text_input("Enter your Company Name")
 
-    # ----------------------------
-    # Step 2: Add / Manage Tasks
-    # ----------------------------
-    st.subheader("➕ Add New Task")
-    new_task = st.text_input("Task Name")
-    if st.button("Add Task"):
-        if new_task and new_task not in st.session_state["companies"][company_name]:
-            st.session_state["companies"][company_name][new_task] = {
-                "marks": 5,
-                "completion": 0,
-                "boss_adjustment": 0
-            }
-            st.success(f"Task '{new_task}' added for {company_name} ✅")
-        elif new_task in st.session_state["companies"][company_name]:
-            st.warning("Task already exists!")
+    if company_name:
+        if company_name not in st.session_state["companies"]:
+            st.session_state["companies"][company_name] = {}
+
+        st.success(f"Welcome, {company_name} Client!")
+
+        # Add Task
+        st.subheader("➕ Add New Task")
+        new_task = st.text_input("Task Name")
+        if st.button("Add Task"):
+            if new_task and new_task not in st.session_state["companies"][company_name]:
+                st.session_state["companies"][company_name][new_task] = {
+                    "marks": 5,
+                    "completion": 0,
+                    "boss_adjustment": 0
+                }
+                st.success(f"Task '{new_task}' added for {company_name} ✅")
+            elif new_task in st.session_state["companies"][company_name]:
+                st.warning("Task already exists!")
+            else:
+                st.warning("Enter a valid task name!")
+
+        # Show tasks
+        st.subheader("📌 Current Tasks")
+        for task in st.session_state["companies"][company_name].keys():
+            st.write(f"🔹 {task}")
+
+# ----------------------------
+# EMPLOYEE ROLE
+# ----------------------------
+elif role == "Employee":
+    st.header("👩‍💻 Employee Section")
+
+    company_name = st.text_input("Enter your Company Name")
+
+    if company_name in st.session_state["companies"]:
+        tasks = st.session_state["companies"][company_name]
+
+        if tasks:
+            for task, details in tasks.items():
+                completion = st.slider(
+                    f"{task} Completion",
+                    min_value=0,
+                    max_value=100,
+                    value=details["completion"],
+                    step=5,
+                    key=f"{task}_employee"
+                )
+                tasks[task]["completion"] = completion
+            st.success("Employee updates saved ✅")
         else:
-            st.warning("Enter a valid task name!")
+            st.warning("No tasks available for this company yet.")
+    elif company_name:
+        st.error("Company not found. Please ask the client to register tasks first.")
 
-    tasks = st.session_state["companies"][company_name]
+# ----------------------------
+# BOSS ROLE
+# ----------------------------
+elif role == "Boss":
+    st.header("👨‍💼 Boss Review Section")
 
-    if tasks:
-        # ----------------------------
-        # Step 3: Employee Input
-        # ----------------------------
-        st.header("👩‍💻 Employee Section: Enter Completion %")
-        for task, details in tasks.items():
-            completion = st.slider(
-                f"{task} Completion",
-                min_value=0,
-                max_value=100,
-                value=details["completion"],
-                step=5,
-                key=f"{task}_employee"
-            )
-            tasks[task]["completion"] = completion
+    company_name = st.text_input("Enter your Company Name")
 
-        # ----------------------------
-        # Step 4: Boss Review Section
-        # ----------------------------
-        st.header("👨‍💼 Boss Review and Adjustments")
-        total_marks_obtained = 0
-        total_marks_possible = 0
+    if company_name in st.session_state["companies"]:
+        tasks = st.session_state["companies"][company_name]
 
-        for task, details in tasks.items():
-            st.write(f"🔹 {task}: Employee entered {details['completion']}%")
+        if tasks:
+            total_marks_obtained = 0
+            total_marks_possible = 0
 
-            # Boss adjustment
-            boss_adjust = st.slider(
-                f"Boss adjust % for {task}",
-                min_value=0,
-                max_value=100,
-                value=details["completion"],
-                step=5,
-                key=f"{task}_boss"
-            )
+            for task, details in tasks.items():
+                st.write(f"🔹 {task}: Employee entered {details['completion']}%")
 
-            tasks[task]["boss_adjustment"] = boss_adjust
+                boss_adjust = st.slider(
+                    f"Boss adjust % for {task}",
+                    min_value=0,
+                    max_value=100,
+                    value=details["completion"],
+                    step=5,
+                    key=f"{task}_boss"
+                )
 
-            # Recalculate marks
-            task_marks = calculate_task_marks(boss_adjust, details["marks"])
-            total_marks_obtained += task_marks
-            total_marks_possible += details["marks"]
+                tasks[task]["boss_adjustment"] = boss_adjust
 
-            st.write(f"✅ Adjusted Marks: {task_marks:.2f}/{details['marks']}")
+                task_marks = calculate_task_marks(boss_adjust, details["marks"])
+                total_marks_obtained += task_marks
+                total_marks_possible += details["marks"]
 
-        # ----------------------------
-        # Step 5: Boss Final Review
-        # ----------------------------
-        st.subheader(f"📌 Total Marks Obtained: {total_marks_obtained:.2f} / {total_marks_possible}")
+                st.write(f"✅ Adjusted Marks: {task_marks:.2f}/{details['marks']}")
 
-        approved = st.radio("Is the work approved?", ("Yes", "No"))
-        comments = st.text_area("Boss's Comments", "Enter your feedback here...")
+            st.subheader(f"📌 Total Marks: {total_marks_obtained:.2f} / {total_marks_possible}")
 
-        if st.button("Submit Report"):
-            st.success("Report Submitted Successfully ✅")
-            st.write("### Final Review")
-            st.write(f"**Approval Status:** {approved}")
-            st.write(f"**Boss's Comments:** {comments}")
+            approved = st.radio("Is the work approved?", ("Yes", "No"))
+            comments = st.text_area("Boss's Comments", "Enter your feedback here...")
+
+            if st.button("Submit Review"):
+                st.success("Review Submitted ✅")
+                st.write(f"**Approval:** {approved}")
+                st.write(f"**Comments:** {comments}")
+        else:
+            st.warning("No tasks available for this company.")
+    elif company_name:
+        st.error("Company not found. Please ask the client to register tasks first.")
