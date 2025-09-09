@@ -1,13 +1,27 @@
 import streamlit as st
+from pinecone import Pinecone, ServerlessSpec
+import uuid
 
 # ----------------------------
-# Session state initialization
+# Pinecone Initialization
 # ----------------------------
-if "companies" not in st.session_state:
-    st.session_state["companies"] = {}
+PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+
+pc = Pinecone(api_key=PINECONE_API_KEY)
+
+index_name = "task-tracker"
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=8,  # small since we only use metadata
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
+
+index = pc.Index(index_name)
 
 # ----------------------------
-# Utility function
+# Utility
 # ----------------------------
 def calculate_task_marks(completion_percentage, total_marks=5):
     return total_marks * (completion_percentage / 100)
@@ -15,112 +29,120 @@ def calculate_task_marks(completion_percentage, total_marks=5):
 # ----------------------------
 # App Title
 # ----------------------------
-st.title("📊 Task Completion Tracker")
+st.title("📊 Task Completion Tracker (with Pinecone)")
 
 # ----------------------------
 # Sidebar Role Selection
 # ----------------------------
-role = st.sidebar.selectbox("Select Role", ["Client", "Employee", "Boss"])
+role = st.sidebar.selectbox("Select Role", ["Employee", "Client", "Boss"])
 
 # ----------------------------
-# CLIENT ROLE
+# EMPLOYEE
 # ----------------------------
-if role == "Client":
-    st.header("👨‍💼 Client Section")
-
-    company_name = st.text_input("Enter your Company Name")
-
-    if company_name:
-        if company_name not in st.session_state["companies"]:
-            st.session_state["companies"][company_name] = {}
-
-        st.success(f"Welcome, {company_name} Client!")
-
-        # Add Task
-        st.subheader("➕ Add New Task")
-        new_task = st.text_input("Task Name")
-        if st.button("Add Task"):
-            if new_task and new_task not in st.session_state["companies"][company_name]:
-                st.session_state["companies"][company_name][new_task] = {
-                    "marks": 5,
-                    "completion": 0,
-                    "boss_adjustment": 0
-                }
-                st.success(f"Task '{new_task}' added for {company_name} ✅")
-            elif new_task in st.session_state["companies"][company_name]:
-                st.warning("Task already exists!")
-            else:
-                st.warning("Enter a valid task name!")
-
-        # Show tasks
-        st.subheader("📌 Current Tasks")
-        for task in st.session_state["companies"][company_name].keys():
-            st.write(f"🔹 {task}")
-
-# ----------------------------
-# EMPLOYEE ROLE
-# ----------------------------
-elif role == "Employee":
+if role == "Employee":
     st.header("👩‍💻 Employee Section")
 
-    company_name = st.text_input("Enter your Company Name")
+    company_name = st.text_input("Enter Company Name")
+    employee_name = st.text_input("Enter Your Name")
+    task_name = st.text_input("Enter Task Name")
+    completion = st.slider("Task Completion %", 0, 100, 0, 5)
 
-    if company_name in st.session_state["companies"]:
-        tasks = st.session_state["companies"][company_name]
+    if st.button("Submit Task"):
+        if company_name and employee_name and task_name:
+            marks = calculate_task_marks(completion)
+            task_id = str(uuid.uuid4())
 
-        if tasks:
-            for task, details in tasks.items():
-                completion = st.slider(
-                    f"{task} Completion",
-                    min_value=0,
-                    max_value=100,
-                    value=details["completion"],
-                    step=5,
-                    key=f"{task}_employee"
-                )
-                tasks[task]["completion"] = completion
-            st.success("Employee updates saved ✅")
+            index.upsert([
+                {
+                    "id": task_id,
+                    "values": [0.0] * 8,  # placeholder vector
+                    "metadata": {
+                        "company": company_name,
+                        "employee": employee_name,
+                        "task": task_name,
+                        "completion": completion,
+                        "boss_adjustment": completion,
+                        "marks": marks
+                    }
+                }
+            ])
+            st.success(f"✅ Task '{task_name}' submitted for {company_name} by {employee_name}")
         else:
-            st.warning("No tasks available for this company yet.")
-    elif company_name:
-        st.error("Company not found. Please ask the client to register tasks first.")
+            st.error("Please fill all fields before submitting!")
 
 # ----------------------------
-# BOSS ROLE
+# CLIENT
+# ----------------------------
+elif role == "Client":
+    st.header("👨‍💼 Client Section")
+
+    company_name = st.text_input("Enter Company Name")
+
+    if company_name:
+        results = index.query(
+            vector=[0.0] * 8,
+            filter={"company": {"$eq": company_name}},
+            top_k=100,
+            include_metadata=True
+        )
+
+        if results.matches:
+            st.subheader(f"📌 Tasks for {company_name}")
+            for match in results.matches:
+                md = match.metadata
+                st.write(f"- 👤 {md['employee']} → {md['task']} : {md['completion']}% (Marks: {md['marks']:.2f})")
+        else:
+            st.warning("No tasks found for this company!")
+
+# ----------------------------
+# BOSS
 # ----------------------------
 elif role == "Boss":
     st.header("👨‍💼 Boss Review Section")
 
-    company_name = st.text_input("Enter your Company Name")
+    company_name = st.text_input("Enter Company Name")
 
-    if company_name in st.session_state["companies"]:
-        tasks = st.session_state["companies"][company_name]
+    if company_name:
+        results = index.query(
+            vector=[0.0] * 8,
+            filter={"company": {"$eq": company_name}},
+            top_k=100,
+            include_metadata=True
+        )
 
-        if tasks:
+        if results.matches:
             total_marks_obtained = 0
             total_marks_possible = 0
 
-            for task, details in tasks.items():
-                st.write(f"🔹 {task}: Employee entered {details['completion']}%")
+            for match in results.matches:
+                md = match.metadata
+
+                st.write(f"### 👤 {md['employee']} - {md['task']}")
+                st.write(f"Employee entered: {md['completion']}%")
 
                 boss_adjust = st.slider(
-                    f"Boss adjust % for {task}",
-                    min_value=0,
-                    max_value=100,
-                    value=details["completion"],
-                    step=5,
-                    key=f"{task}_boss"
+                    f"Boss adjust % for {md['employee']} - {md['task']}",
+                    0, 100, int(md['boss_adjustment']), 5,
+                    key=match.id
                 )
 
-                tasks[task]["boss_adjustment"] = boss_adjust
+                new_marks = calculate_task_marks(boss_adjust)
 
-                task_marks = calculate_task_marks(boss_adjust, details["marks"])
-                total_marks_obtained += task_marks
-                total_marks_possible += details["marks"]
+                # Update in Pinecone
+                index.update(
+                    id=match.id,
+                    set_metadata={
+                        "boss_adjustment": boss_adjust,
+                        "marks": new_marks
+                    }
+                )
 
-                st.write(f"✅ Adjusted Marks: {task_marks:.2f}/{details['marks']}")
+                st.write(f"✅ Adjusted Marks: {new_marks:.2f}/5")
 
-            st.subheader(f"📌 Total Marks: {total_marks_obtained:.2f} / {total_marks_possible}")
+                total_marks_obtained += new_marks
+                total_marks_possible += 5
+
+            st.subheader(f"📌 Total Marks for {company_name}: {total_marks_obtained:.2f}/{total_marks_possible}")
 
             approved = st.radio("Is the work approved?", ("Yes", "No"))
             comments = st.text_area("Boss's Comments", "Enter your feedback here...")
@@ -130,6 +152,4 @@ elif role == "Boss":
                 st.write(f"**Approval:** {approved}")
                 st.write(f"**Comments:** {comments}")
         else:
-            st.warning("No tasks available for this company.")
-    elif company_name:
-        st.error("Company not found. Please ask the client to register tasks first.")
+            st.warning("No tasks found for this company!")
