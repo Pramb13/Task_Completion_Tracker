@@ -9,7 +9,7 @@ PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-index_name = "task-tracker"
+index_name = "task"
 if index_name not in pc.list_indexes().names():
     pc.create_index(
         name=index_name,
