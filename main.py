@@ -1,24 +1,7 @@
 import streamlit as st
-from pinecone import Pinecone, ServerlessSpec
 import uuid
 
-# ----------------------------
-# Pinecone Initialization
-# ----------------------------
-PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
-pc = Pinecone(api_key=PINECONE_API_KEY)
-
-index_name = "task"
-if index_name not in pc.list_indexes().names():
-    pc.create_index(
-        name=index_name,
-        dimension=8,  # small since we only use metadata
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-    )
-
-index = pc.Index(index_name)
 
 # ----------------------------
 # Utility
