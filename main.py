@@ -1,138 +1,169 @@
 import streamlit as st
+from pinecone import Pinecone, ServerlessSpec
+import numpy as np
 import uuid
 
+# ----------------------------
+# Initialize Pinecone client
+# ----------------------------
+pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # Keep API key in Streamlit secrets
 
+index_name = "task"
+dimension = 8  # Adjust depending on embedding model used (8 = demo, 384 = MiniLM, 1536 = OpenAI)
+
+# Create index if not exists
+if index_name not in [idx["name"] for idx in pc.list_indexes()]:
+    pc.create_index(
+        name=index_name,
+        dimension=dimension,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
+
+# Connect to index
+index = pc.Index(index_name)
 
 # ----------------------------
-# Utility
+# Helper function
 # ----------------------------
-def calculate_task_marks(completion_percentage, total_marks=5):
-    return total_marks * (completion_percentage / 100)
+def calculate_task_marks(completion, total=5):
+    return total * (completion / 100)
 
 # ----------------------------
-# App Title
+# Streamlit App
 # ----------------------------
-st.title("📊 Task Completion Tracker (with Pinecone)")
+st.title("📊 EvalTrack: AI-Powered Task Completion & Review")
+
+role = st.sidebar.selectbox("Login as", ["Employee", "Client", "Boss"])
 
 # ----------------------------
-# Sidebar Role Selection
-# ----------------------------
-role = st.sidebar.selectbox("Select Role", ["Employee", "Client", "Boss"])
-
-# ----------------------------
-# EMPLOYEE
+# Employee Role
 # ----------------------------
 if role == "Employee":
     st.header("👩‍💻 Employee Section")
 
-    company_name = st.text_input("Enter Company Name")
-    employee_name = st.text_input("Enter Your Name")
-    task_name = st.text_input("Enter Task Name")
-    completion = st.slider("Task Completion %", 0, 100, 0, 5)
+    company = st.text_input("Enter Company Name")
+    employee = st.text_input("Enter Your Name")
+    task = st.text_input("Enter Task Title")
+    completion = st.slider("Completion %", 0, 100, 0)
 
-    if st.button("Submit Task"):
-        if company_name and employee_name and task_name:
+    if st.button("📩 Submit Task"):
+        if company and employee and task:
             marks = calculate_task_marks(completion)
-            task_id = str(uuid.uuid4())
+            vector = np.random.rand(dimension).tolist()  # Dummy vector for demo
 
-            index.upsert([
-                {
-                    "id": task_id,
-                    "values": [0.0] * 8,  # placeholder vector
-                    "metadata": {
-                        "company": company_name,
-                        "employee": employee_name,
-                        "task": task_name,
-                        "completion": completion,
-                        "boss_adjustment": completion,
-                        "marks": marks
+            task_id = str(uuid.uuid4())
+            index.upsert(
+                vectors=[
+                    {
+                        "id": task_id,
+                        "values": vector,
+                        "metadata": {
+                            "company": company,
+                            "employee": employee,
+                            "task": task,
+                            "completion": completion,
+                            "boss_adjustment": completion,
+                            "marks": marks
+                        }
                     }
-                }
-            ])
-            st.success(f"✅ Task '{task_name}' submitted for {company_name} by {employee_name}")
+                ]
+            )
+            st.success(f"✅ Task '{task}' submitted for {company} by {employee}")
         else:
-            st.error("Please fill all fields before submitting!")
+            st.error("❌ Please fill all fields before submitting.")
 
 # ----------------------------
-# CLIENT
+# Client Role
 # ----------------------------
 elif role == "Client":
     st.header("👨‍💼 Client Section")
+    company = st.text_input("Enter Company Name")
 
-    company_name = st.text_input("Enter Company Name")
+    if st.button("🔍 View Tasks"):
+        if company:
+            res = index.query(
+                vector=np.random.rand(dimension).tolist(),  # Dummy query vector
+                top_k=50,
+                include_metadata=True,
+                filter={"company": {"$eq": company}}
+            )
 
-    if company_name:
-        results = index.query(
-            vector=[0.0] * 8,
-            filter={"company": {"$eq": company_name}},
-            top_k=100,
-            include_metadata=True
-        )
-
-        if results.matches:
-            st.subheader(f"📌 Tasks for {company_name}")
-            for match in results.matches:
-                md = match.metadata
-                st.write(f"- 👤 {md['employee']} → {md['task']} : {md['completion']}% (Marks: {md['marks']:.2f})")
+            if res.matches:
+                st.subheader(f"📌 Tasks for {company}")
+                for match in res.matches:
+                    md = match.metadata
+                    st.write(
+                        f"👤 {md['employee']} | **{md['task']}** → {md['completion']}% "
+                        f"(Marks: {md['marks']:.2f})"
+                    )
+            else:
+                st.warning("⚠️ No tasks found for this company.")
         else:
-            st.warning("No tasks found for this company!")
+            st.error("❌ Please enter a company name.")
 
 # ----------------------------
-# BOSS
+# Boss Role
 # ----------------------------
 elif role == "Boss":
     st.header("👨‍💼 Boss Review Section")
+    company = st.text_input("Enter Company Name")
 
-    company_name = st.text_input("Enter Company Name")
+    if st.button("📂 Load Tasks"):
+        if company:
+            res = index.query(
+                vector=np.random.rand(dimension).tolist(),
+                top_k=50,
+                include_metadata=True,
+                filter={"company": {"$eq": company}}
+            )
 
-    if company_name:
-        results = index.query(
-            vector=[0.0] * 8,
-            filter={"company": {"$eq": company_name}},
-            top_k=100,
-            include_metadata=True
-        )
+            if res.matches:
+                total_marks, possible_marks = 0, 0
+                st.subheader(f"📌 Review Tasks for {company}")
 
-        if results.matches:
-            total_marks_obtained = 0
-            total_marks_possible = 0
+                for match in res.matches:
+                    md = match.metadata
+                    st.write(f"👤 {md['employee']} | Task: **{md['task']}**")
+                    st.write(f"Employee Completion: {md['completion']}%")
 
-            for match in results.matches:
-                md = match.metadata
+                    new_completion = st.slider(
+                        f"Adjust completion for {md['employee']} - {md['task']}",
+                        0, 100, int(md["boss_adjustment"]),
+                        key=match.id
+                    )
 
-                st.write(f"### 👤 {md['employee']} - {md['task']}")
-                st.write(f"Employee entered: {md['completion']}%")
+                    new_marks = calculate_task_marks(new_completion)
 
-                boss_adjust = st.slider(
-                    f"Boss adjust % for {md['employee']} - {md['task']}",
-                    0, 100, int(md['boss_adjustment']), 5,
-                    key=match.id
-                )
+                    # Update in Pinecone
+                    index.upsert(
+                        vectors=[
+                            {
+                                "id": match.id,
+                                "values": match.values,
+                                "metadata": {
+                                    **md,
+                                    "boss_adjustment": new_completion,
+                                    "marks": new_marks
+                                }
+                            }
+                        ]
+                    )
 
-                new_marks = calculate_task_marks(boss_adjust)
+                    st.write(f"✅ Adjusted Marks: {new_marks:.2f}/5")
+                    total_marks += new_marks
+                    possible_marks += 5
 
-                # Update in Pinecone
-                index.update(
-                    id=match.id,
-                    set_metadata={
-                        "boss_adjustment": boss_adjust,
-                        "marks": new_marks
-                    }
-                )
+                st.subheader(f"📊 Total: {total_marks:.2f} / {possible_marks}")
 
-                st.write(f"✅ Adjusted Marks: {new_marks:.2f}/5")
+                approved = st.radio("Final Approval:", ["Yes", "No"])
+                comments = st.text_area("Boss's Comments")
 
-                total_marks_obtained += new_marks
-                total_marks_possible += 5
-
-            st.subheader(f"📌 Total Marks for {company_name}: {total_marks_obtained:.2f}/{total_marks_possible}")
-
-            approved = st.radio("Is the work approved?", ("Yes", "No"))
-            comments = st.text_area("Boss's Comments", "Enter your feedback here...")
-
-            if st.button("Submit Review"):
-                st.success("Review Submitted ✅")
-                st.write(f"**Approval:** {approved}")
-                st.write(f"**Comments:** {comments}")
+                if st.button("Submit Review"):
+                    st.success("✅ Review submitted successfully!")
+                    st.write(f"**Approval:** {approved}")
+                    st.write(f"**Comments:** {comments}")
+            else:
+                st.warning("⚠️ No tasks found for this company.")
         else:
-            st.warning("No tasks found for this company!")
+            st.error("❌ Please enter a company name.")
