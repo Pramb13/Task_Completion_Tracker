@@ -9,7 +9,7 @@ import uuid
 pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # Keep API key in Streamlit secrets
 
 index_name = "task"
-dimension = 8  # Adjust depending on embedding model used (8 = demo, 384 = MiniLM, 1536 = OpenAI)
+dimension = 1024  # Adjust depending on embedding model used (8 = demo, 384 = MiniLM, 1536 = OpenAI)
 
 # Create index if not exists
 if index_name not in [idx["name"] for idx in pc.list_indexes()]:
