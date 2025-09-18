@@ -3,10 +3,14 @@ from pinecone import Pinecone, ServerlessSpec
 import numpy as np
 import uuid
 
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.svm import SVC
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 # ----------------------------
 # Initialize Pinecone client
 # ----------------------------
-pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # keep API key in Streamlit secrets
+pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # keep API key safe
 
 index_name = "task-index"
 dimension = 64  # demo dimension (use 384, 768, or 1536 if embeddings are used)
@@ -27,8 +31,25 @@ index = pc.Index(index_name)
 # Helper function
 # ----------------------------
 def calculate_task_marks(completion, total=5):
-    """Convert completion % into marks (out of 5)."""
     return total * (completion / 100)
+
+# ----------------------------
+# Train ML models (Regression + Classification)
+# ----------------------------
+X_train = np.array([[0], [25], [50], [75], [100]])
+y_marks = np.array([0, 1.25, 2.5, 3.75, 5])  # regression target
+y_status = np.array([0, 0, 1, 1, 1])  # 0 = Delayed, 1 = On Track
+
+lin_reg = LinearRegression().fit(X_train, y_marks)
+log_reg = LogisticRegression().fit(X_train, y_status)
+
+# Sentiment Analysis Model (SVM)
+train_comments = ["Good job", "Excellent work", "Needs improvement", "Very poor progress"]
+labels = [1, 1, 0, 0]  # 1=Positive, 0=Negative
+vectorizer = TfidfVectorizer()
+X_sent = vectorizer.fit_transform(train_comments)
+svm_clf = SVC(kernel="linear")
+svm_clf.fit(X_sent, labels)
 
 # ----------------------------
 # Streamlit App
@@ -51,7 +72,7 @@ if role == "Employee":
     if st.button("📩 Submit Task"):
         if company and employee and task:
             marks = calculate_task_marks(completion)
-            vector = np.random.rand(dimension).tolist()  # Dummy vector for demo
+            vector = np.random.rand(dimension).tolist()  # dummy vector
 
             task_id = str(uuid.uuid4())
             index.upsert(
@@ -64,9 +85,9 @@ if role == "Employee":
                             "employee": employee,
                             "task": task,
                             "completion": completion,
-                            "boss_adjustment": completion,
                             "marks": marks,
-                            "reviewed": False  # initially not reviewed
+                            "reviewed": False,
+                            "status": "Pending"
                         }
                     }
                 ]
@@ -96,9 +117,10 @@ elif role == "Client":
                 for match in res.matches:
                     md = match.metadata
                     st.write(
-                        f"👤 {md['employee']} | **{md['task']}** → {md['boss_adjustment']}% "
-                        f"(Marks: {md['marks']:.2f})"
+                        f"👤 {md['employee']} | **{md['task']}** → {md['completion']}% "
+                        f"(AI Marks: {md['marks']:.2f}) | Status: {md['status']}"
                     )
+                    st.write(f"📝 Boss Comment Sentiment: {md.get('sentiment', 'N/A')}")
             else:
                 st.warning("⚠️ No approved tasks found for this company.")
         else:
@@ -117,26 +139,36 @@ elif role == "Boss":
                 vector=np.random.rand(dimension).tolist(),
                 top_k=100,
                 include_metadata=True,
-                include_values=True,   # FIX: include values so we can re-upsert
-                filter={"company": {"$eq": company}}
+                include_values=True,
+                filter={"company": {"$eq": company}, "reviewed": {"$eq": False}}
             )
 
             if res.matches:
                 total_marks, possible_marks = 0, 0
-                st.subheader(f"📌 Review Tasks for {company}")
+                st.subheader(f"📌 Pending Review Tasks for {company}")
 
                 for match in res.matches:
                     md = match.metadata
+                    completion = md["completion"]
+
+                    # AI predictions
+                    predicted_marks = lin_reg.predict([[completion]])[0]
+                    status = log_reg.predict([[completion]])[0]
+                    status_text = "On Track" if status == 1 else "Delayed"
+
                     st.write(f"👤 {md['employee']} | Task: **{md['task']}**")
-                    st.write(f"Employee Completion: {md['completion']}%")
+                    st.write(f"Employee Reported Completion: {completion}%")
+                    st.write(f"🤖 AI Predicted Marks: {predicted_marks:.2f}/5")
+                    st.write(f"📌 AI Status: {status_text}")
 
-                    new_completion = st.slider(
-                        f"Boss adjust for {md['employee']} - {md['task']}",
-                        0, 100, int(md["boss_adjustment"]),
-                        key=match.id
-                    )
-
-                    new_marks = calculate_task_marks(new_completion)
+                    # Boss feedback
+                    comments = st.text_area(f"📝 Boss Comments for {md['employee']} - {md['task']}", key=match.id)
+                    sentiment_text = "N/A"
+                    if comments:
+                        X_new = vectorizer.transform([comments])
+                        sentiment = svm_clf.predict(X_new)[0]
+                        sentiment_text = "Positive" if sentiment == 1 else "Negative"
+                        st.write(f"🤖 AI Detected Sentiment: {sentiment_text}")
 
                     # Ensure vector exists
                     values = match.values if hasattr(match, "values") and match.values else np.random.rand(dimension).tolist()
@@ -149,28 +181,24 @@ elif role == "Boss":
                                 "values": values,
                                 "metadata": {
                                     **md,
-                                    "boss_adjustment": new_completion,
-                                    "marks": new_marks,
-                                    "reviewed": True   # mark as reviewed
+                                    "marks": float(predicted_marks),
+                                    "status": status_text,
+                                    "reviewed": True,
+                                    "comments": comments,
+                                    "sentiment": sentiment_text
                                 }
                             }
                         ]
                     )
 
-                    st.write(f"✅ Adjusted Marks: {new_marks:.2f}/5")
-                    total_marks += new_marks
+                    total_marks += predicted_marks
                     possible_marks += 5
 
-                st.subheader(f"📊 Total: {total_marks:.2f} / {possible_marks}")
+                st.subheader(f"📊 Total AI-Predicted Marks: {total_marks:.2f} / {possible_marks}")
 
-                approved = st.radio("Final Approval:", ["Yes", "No"])
-                comments = st.text_area("📝 Boss's Comments")
-
-                if st.button("✅ Submit Review"):
-                    st.success("Review submitted successfully!")
-                    st.write(f"**Approval:** {approved}")
-                    st.write(f"**Comments:** {comments}")
+                if st.button("✅ Finalize Review"):
+                    st.success("Review submitted and tasks marked as reviewed ✅")
             else:
-                st.warning("⚠️ No tasks found for this company.")
+                st.warning("⚠️ No pending tasks found for this company.")
         else:
             st.error("❌ Please enter a company name.")
