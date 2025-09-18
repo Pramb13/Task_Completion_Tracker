@@ -6,10 +6,10 @@ import uuid
 # ----------------------------
 # Initialize Pinecone client
 # ----------------------------
-pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # Keep API key safe in Streamlit secrets
+pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # keep API key in Streamlit secrets
 
 index_name = "task-index"
-dimension = 64  # Small dimension for demo (adjust based on embedding model you use)
+dimension = 64  # demo dimension (use 384, 768, or 1536 if embeddings are used)
 
 # Create index if not exists
 if index_name not in [idx["name"] for idx in pc.list_indexes()]:
@@ -51,7 +51,7 @@ if role == "Employee":
     if st.button("📩 Submit Task"):
         if company and employee and task:
             marks = calculate_task_marks(completion)
-            vector = np.random.rand(dimension).tolist()  # Dummy embedding vector
+            vector = np.random.rand(dimension).tolist()  # Dummy vector for demo
 
             task_id = str(uuid.uuid4())
             index.upsert(
@@ -65,7 +65,8 @@ if role == "Employee":
                             "task": task,
                             "completion": completion,
                             "boss_adjustment": completion,
-                            "marks": marks
+                            "marks": marks,
+                            "reviewed": False  # initially not reviewed
                         }
                     }
                 ]
@@ -81,25 +82,25 @@ elif role == "Client":
     st.header("👨‍💼 Client Section")
     company = st.text_input("🏢 Enter Company Name")
 
-    if st.button("🔍 View Tasks"):
+    if st.button("🔍 View Approved Tasks"):
         if company:
             res = index.query(
-                vector=np.random.rand(dimension).tolist(),  # Dummy query vector
+                vector=np.random.rand(dimension).tolist(),
                 top_k=100,
                 include_metadata=True,
-                filter={"company": {"$eq": company}}
+                filter={"company": {"$eq": company}, "reviewed": {"$eq": True}}
             )
 
             if res.matches:
-                st.subheader(f"📌 Tasks for {company}")
+                st.subheader(f"📌 Approved Tasks for {company}")
                 for match in res.matches:
                     md = match.metadata
                     st.write(
-                        f"👤 {md['employee']} | **{md['task']}** → {md['completion']}% "
+                        f"👤 {md['employee']} | **{md['task']}** → {md['boss_adjustment']}% "
                         f"(Marks: {md['marks']:.2f})"
                     )
             else:
-                st.warning("⚠️ No tasks found for this company.")
+                st.warning("⚠️ No approved tasks found for this company.")
         else:
             st.error("❌ Please enter a company name.")
 
@@ -116,6 +117,7 @@ elif role == "Boss":
                 vector=np.random.rand(dimension).tolist(),
                 top_k=100,
                 include_metadata=True,
+                include_values=True,   # FIX: include values so we can re-upsert
                 filter={"company": {"$eq": company}}
             )
 
@@ -136,16 +138,20 @@ elif role == "Boss":
 
                     new_marks = calculate_task_marks(new_completion)
 
+                    # Ensure vector exists
+                    values = match.values if hasattr(match, "values") and match.values else np.random.rand(dimension).tolist()
+
                     # Update in Pinecone
                     index.upsert(
                         vectors=[
                             {
                                 "id": match.id,
-                                "values": match.values,
+                                "values": values,
                                 "metadata": {
                                     **md,
                                     "boss_adjustment": new_completion,
-                                    "marks": new_marks
+                                    "marks": new_marks,
+                                    "reviewed": True   # mark as reviewed
                                 }
                             }
                         ]
