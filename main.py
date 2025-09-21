@@ -11,8 +11,8 @@ from sklearn.svm import SVC
 # ----------------------------
 pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # put API key in Streamlit secrets
 
-index_name = "task-tracker"
-dimension = 128  # must match vector size
+index_name = "task"
+dimension = 64  # must match vector size
 
 # Create index if not exists
 if index_name not in [idx["name"] for idx in pc.list_indexes()]:
