@@ -6,49 +6,55 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.svm import SVC
 
-# ----------------------------
-# Initialize Pinecone client
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 Step 1: Initialize Pinecone (Vector Database)
+# ------------------------------------------------------
 pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # API key stored in Streamlit secrets
 
 index_name = "task"
-dimension = 1024  # must match vector size
+dimension = 1024  # size of vector embeddings (here using random demo vectors)
 
-# Create index if not exists
+# Create Pinecone index if not already exists
 if index_name not in [idx["name"] for idx in pc.list_indexes()]:
     pc.create_index(
         name=index_name,
         dimension=dimension,
-        metric="cosine",
+        metric="cosine",  # similarity metric
         spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
 # Connect to index
 index = pc.Index(index_name)
 
-# ----------------------------
-# ML Models
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 Step 2: Machine Learning Models
+# ------------------------------------------------------
+
+# Linear Regression → predicts marks based on completion %
 lin_reg = LinearRegression()
-lin_reg.fit([[0], [100]], [0, 5])  # 0% -> 0 marks, 100% -> 5 marks
+lin_reg.fit([[0], [100]], [0, 5])  # 0% → 0 marks, 100% → 5 marks
 
+# Logistic Regression → predicts task status (On Track / Delayed)
 log_reg = LogisticRegression()
-log_reg.fit([[0], [50], [100]], [0, 0, 1])  # <60 delayed, else on track
+log_reg.fit([[0], [50], [100]], [0, 0, 1])  # <50% delayed, >=100% on track
 
+# SVM for sentiment analysis (Positive / Negative comments)
 vectorizer = CountVectorizer()
 X_train = vectorizer.fit_transform(["good work", "excellent", "needs improvement", "bad performance"])
-y_train = [1, 1, 0, 0]
+y_train = [1, 1, 0, 0]  # 1 = Positive, 0 = Negative
 svm_clf = SVC()
 svm_clf.fit(X_train, y_train)
 
-# ----------------------------
-# Helpers
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 Step 3: Helper Functions
+# ------------------------------------------------------
+
 def random_vector(dim=dimension):
+    """Generate random vector (since we are not using embeddings here)."""
     return np.random.rand(dim).tolist()
 
 def safe_metadata(md: dict):
-    """Ensure metadata values are JSON serializable"""
+    """Convert metadata values into safe JSON format (avoid numpy types)."""
     clean = {}
     for k, v in md.items():
         if isinstance(v, (np.generic,)):
@@ -56,31 +62,36 @@ def safe_metadata(md: dict):
         clean[k] = v
     return clean
 
-# ----------------------------
-# App
-# ----------------------------
-st.title("📊 AI-Powered Task Completion & Review System")
+# ------------------------------------------------------
+# 🔹 Step 4: Streamlit App
+# ------------------------------------------------------
+st.title("📊 AI-Powered Task Completion & Review")
 
+# User role selection (Team Member, Manager, Client)
 role = st.sidebar.selectbox("Login as", ["Team Member", "Manager", "Client"])
 
-# ----------------------------
-# Team Member Role
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 TEAM MEMBER ROLE
+# ------------------------------------------------------
 if role == "Team Member":
     st.header("👩‍💻 Team Member Section")
 
-    company = st.text_input("🏢 Enter Company Name")
-    employee = st.text_input("👤 Enter Your Name")
-    task = st.text_input("📝 Enter Task Title")
+    # Input fields
+    company = st.text_input("🏢 Company Name")
+    employee = st.text_input("👤 Your Name")
+    task = st.text_input("📝 Task Title")
     completion = st.slider("✅ Completion %", 0, 100, 0)
 
+    # Submit task
     if st.button("📩 Submit Task"):
         if company and employee and task:
-            marks = lin_reg.predict([[completion]])[0]
-            status = log_reg.predict([[completion]])[0]
+            marks = lin_reg.predict([[completion]])[0]  # AI predicted marks
+            status = log_reg.predict([[completion]])[0]  # AI status
             status_text = "On Track" if status == 1 else "Delayed"
 
-            task_id = str(uuid.uuid4())
+            task_id = str(uuid.uuid4())  # unique ID for each task
+
+            # Store task in Pinecone
             index.upsert(
                 vectors=[{
                     "id": task_id,
@@ -92,23 +103,24 @@ if role == "Team Member":
                         "completion": float(completion),
                         "marks": float(marks),
                         "status": status_text,
-                        "reviewed": False
+                        "reviewed": False  # Not yet reviewed by Manager
                     })
                 }]
             )
-            st.success(f"✅ Task '{task}' submitted by {employee} for {company}")
+            st.success(f"✅ Task '{task}' submitted by {employee}")
         else:
-            st.error("❌ Please fill all fields before submitting.")
+            st.error("❌ Fill all fields before submitting")
 
-# ----------------------------
-# Client Role
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 CLIENT ROLE
+# ------------------------------------------------------
 elif role == "Client":
     st.header("👨‍💼 Client Section")
-    company = st.text_input("🏢 Enter Company Name")
+    company = st.text_input("🏢 Company Name")
 
     if st.button("🔍 View Approved Tasks"):
         if company:
+            # Fetch only reviewed (approved) tasks
             res = index.query(
                 vector=random_vector(),
                 top_k=100,
@@ -120,74 +132,75 @@ elif role == "Client":
                 st.subheader(f"📌 Approved Tasks for {company}")
                 for match in res.matches:
                     md = match.metadata or {}
-                    employee = md.get("employee", "Unknown")
-                    task = md.get("task", "Untitled")
-                    completion = md.get("completion", 0.0)
-                    marks = md.get("marks", 0.0)
-                    status = md.get("status", "Not Reviewed")
-                    sentiment = md.get("sentiment", "N/A")
-
                     st.write(
-                        f"👤 {employee} | **{task}** → {completion}% "
-                        f"(AI Marks: {marks:.2f}) | Status: {status}"
+                        f"👤 {md.get('employee','?')} | **{md.get('task','?')}** → {md.get('completion',0)}% "
+                        f"(Marks: {md.get('marks',0):.2f}) | Status: {md.get('status','?')}"
                     )
-                    st.write(f"📝 Manager Comment Sentiment: {sentiment}")
+                    st.write(f"📝 Manager Sentiment: {md.get('sentiment','N/A')}")
             else:
-                st.warning("⚠️ No approved tasks found for this company.")
+                st.warning("⚠️ No approved tasks found.")
         else:
-            st.error("❌ Please enter a company name.")
+            st.error("❌ Enter company name")
 
-# ----------------------------
-# Manager Role
-# ----------------------------
+# ------------------------------------------------------
+# 🔹 MANAGER ROLE
+# ------------------------------------------------------
 elif role == "Manager":
-    st.header("👨‍💼 Manager Review Section")
-    company = st.text_input("🏢 Enter Company Name")
+    st.header("🧑‍💼 Manager Review Section")
 
-    # Load tasks into session_state so sliders don’t reset
-    if st.button("📂 Load Tasks for Review"):
-        if company:
-            res = index.query(
-                vector=random_vector(),
-                top_k=100,
-                include_metadata=True,
-                include_values=True,
-                filter={"company": {"$eq": company}, "reviewed": {"$eq": False}}
-            )
-            st.session_state["tasks_to_review"] = res.matches
+    # First: Fetch all companies in Pinecone
+    all_res = index.query(vector=random_vector(), top_k=100, include_metadata=True)
+    companies = list(set([m.metadata["company"] for m in all_res.matches])) if all_res.matches else []
+
+    # Dropdown for companies
+    if companies:
+        company = st.selectbox("🏢 Select Company", companies)
+    else:
+        st.warning("⚠️ No companies found.")
+        company = None
+
+    # Load only pending tasks (not yet reviewed)
+    if company and st.button("📂 Load Pending Tasks"):
+        res = index.query(
+            vector=random_vector(),
+            top_k=100,
+            include_metadata=True,
+            include_values=True,
+            filter={"company": {"$eq": company}, "reviewed": {"$eq": False}}
+        )
+
+        # Case 1: All tasks are already reviewed
+        if not res.matches:
+            st.success(f"✅ All tasks for {company} have already been reviewed!")
         else:
-            st.error("❌ Please enter a company name.")
+            st.session_state["pending"] = res.matches
 
-    # Display tasks from session state
-    if "tasks_to_review" in st.session_state and st.session_state["tasks_to_review"]:
-        total_marks, possible_marks = 0, 0
-        st.subheader(f"📌 Pending Review Tasks for {company}")
+    # Show pending tasks if available
+    if "pending" in st.session_state and st.session_state["pending"]:
+        st.subheader(f"📌 Pending Tasks for {company}")
 
-        for match in st.session_state["tasks_to_review"]:
+        for match in st.session_state["pending"]:
             md = match.metadata or {}
-            emp = md.get("employee", "Unknown")
-            task = md.get("task", "Untitled")
+            emp = md.get("employee", "?")
+            task = md.get("task", "?")
             emp_completion = float(md.get("completion", 0))
 
             st.write(f"👤 {emp} | Task: **{task}**")
-            st.write(f"Reported Completion: {emp_completion}%")
+            st.write(f"Employee Reported: {emp_completion}%")
 
-            # Manager adjusts completion %
+            # Manager adjusts completion percentage
             manager_completion = st.slider(
-                f"✅ Manager Adjusted Completion for {emp} - {task}",
+                f"✅ Adjust Completion ({emp} - {task})",
                 0, 100, int(emp_completion),
                 key=f"adj_{match.id}"
             )
 
-            # AI predictions
+            # AI predicts marks and status again
             predicted_marks = float(lin_reg.predict([[manager_completion]])[0])
             status = log_reg.predict([[manager_completion]])[0]
             status_text = "On Track" if status == 1 else "Delayed"
 
-            st.write(f"🤖 AI Predicted Marks: {predicted_marks:.2f}/5")
-            st.write(f"📌 AI Status: {status_text}")
-
-            # Manager comments + Sentiment
+            # Manager comments with sentiment analysis
             comments = st.text_area(
                 f"📝 Manager Comments for {emp} - {task}",
                 key=f"c_{match.id}"
@@ -198,42 +211,26 @@ elif role == "Manager":
                     X_new = vectorizer.transform([comments])
                     sentiment = svm_clf.predict(X_new)[0]
                     sentiment_text = "Positive" if sentiment == 1 else "Negative"
-                    st.write(f"🤖 AI Detected Sentiment: {sentiment_text}")
                 except Exception:
                     sentiment_text = "N/A"
 
-            # Save adjustments temporarily in session_state
-            if "review_updates" not in st.session_state:
-                st.session_state["review_updates"] = {}
-            st.session_state["review_updates"][match.id] = {
-                "values": match.values if hasattr(match, "values") and match.values else random_vector(),
-                "metadata": safe_metadata({
-                    **md,
-                    "completion": float(manager_completion),
-                    "marks": predicted_marks,
-                    "status": status_text,
-                    "reviewed": True,
-                    "comments": comments,
-                    "sentiment": sentiment_text
-                })
-            }
+            # Show AI output
+            st.write(f"🤖 AI Marks: {predicted_marks:.2f}/5 | Status: {status_text}")
+            st.write(f"🤖 Sentiment: {sentiment_text}")
 
-            total_marks += predicted_marks
-            possible_marks += 5
-
-        st.subheader(f"📊 Total AI-Predicted Marks: {total_marks:.2f} / {possible_marks}")
-
-        # Final save button
-        if st.button("💾 Submit All Reviews"):
-            for task_id, task_data in st.session_state["review_updates"].items():
-                try:
-                    index.upsert(vectors=[{
-                        "id": task_id,
-                        "values": task_data["values"],
-                        "metadata": task_data["metadata"]
-                    }])
-                except Exception as e:
-                    st.error(f"❌ Update failed for task {task_id}: {e}")
-            st.success("✅ All reviews submitted to Pinecone!")
-            st.session_state.pop("tasks_to_review")
-            st.session_state.pop("review_updates")
+            # Save review to Pinecone
+            if st.button(f"💾 Save Review for {emp} - {task}", key=f"s_{match.id}"):
+                index.upsert(vectors=[{
+                    "id": match.id,
+                    "values": match.values if hasattr(match, "values") else random_vector(),
+                    "metadata": safe_metadata({
+                        **md,
+                        "completion": float(manager_completion),
+                        "marks": predicted_marks,
+                        "status": status_text,
+                        "reviewed": True,  # Mark as reviewed
+                        "comments": comments,
+                        "sentiment": sentiment_text
+                    })
+                }])
+                st.success(f"✅ Review saved for {emp} - {task}")
