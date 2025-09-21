@@ -9,10 +9,10 @@ from sklearn.svm import SVC
 # ----------------------------
 # Initialize Pinecone client
 # ----------------------------
-pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # API key in Streamlit secrets
+pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])  # put API key in Streamlit secrets
 
-index_name = "task-index"
-dimension = 64  # for demo purpose
+index_name = "task-tracker"
+dimension = 128  # must match vector size
 
 # Create index if not exists
 if index_name not in [idx["name"] for idx in pc.list_indexes()]:
@@ -27,31 +27,37 @@ if index_name not in [idx["name"] for idx in pc.list_indexes()]:
 index = pc.Index(index_name)
 
 # ----------------------------
-# Dummy ML Models
+# ML Models
 # ----------------------------
-# Linear Regression for marks prediction
 lin_reg = LinearRegression()
 lin_reg.fit([[0], [100]], [0, 5])  # 0% -> 0 marks, 100% -> 5 marks
 
-# Logistic Regression for status (on track / delayed)
 log_reg = LogisticRegression()
-log_reg.fit([[0], [50], [100]], [0, 0, 1])  # Below 60 = delayed, else on track
+log_reg.fit([[0], [50], [100]], [0, 0, 1])  # <60 delayed, else on track
 
-# SVM for sentiment (positive / negative)
 vectorizer = CountVectorizer()
 X_train = vectorizer.fit_transform(["good work", "excellent", "needs improvement", "bad performance"])
-y_train = [1, 1, 0, 0]  # 1=Positive, 0=Negative
+y_train = [1, 1, 0, 0]
 svm_clf = SVC()
 svm_clf.fit(X_train, y_train)
 
 # ----------------------------
-# Helper function
+# Helper
 # ----------------------------
 def random_vector(dim=dimension):
     return np.random.rand(dim).tolist()
 
+def safe_metadata(md: dict):
+    """Ensure metadata values are JSON serializable"""
+    clean = {}
+    for k, v in md.items():
+        if isinstance(v, (np.generic,)):
+            v = v.item()
+        clean[k] = v
+    return clean
+
 # ----------------------------
-# Streamlit App
+# App UI
 # ----------------------------
 st.title("📊 AI-Powered Task Completion & Review System")
 
@@ -79,15 +85,15 @@ if role == "Team Member":
                 vectors=[{
                     "id": task_id,
                     "values": random_vector(),
-                    "metadata": {
+                    "metadata": safe_metadata({
                         "company": company,
                         "employee": employee,
                         "task": task,
-                        "completion": completion,
+                        "completion": float(completion),
                         "marks": float(marks),
                         "status": status_text,
                         "reviewed": False
-                    }
+                    })
                 }]
             )
             st.success(f"✅ Task '{task}' submitted by {employee} for {company}")
@@ -114,11 +120,18 @@ elif role == "Client":
                 st.subheader(f"📌 Approved Tasks for {company}")
                 for match in res.matches:
                     md = match.metadata
+                    employee = md.get("employee", "Unknown")
+                    task = md.get("task", "Untitled")
+                    completion = md.get("completion", 0.0)
+                    marks = md.get("marks", 0.0)
+                    status = md.get("status", "Not Reviewed")
+                    sentiment = md.get("sentiment", "N/A")
+
                     st.write(
-                        f"👤 {md['employee']} | **{md['task']}** → {md['completion']}% "
-                        f"(AI Marks: {md['marks']:.2f}) | Status: {md['status']}"
+                        f"👤 {employee} | **{task}** → {completion}% "
+                        f"(AI Marks: {marks:.2f}) | Status: {status}"
                     )
-                    st.write(f"📝 Manager Comment Sentiment: {md.get('sentiment', 'N/A')}")
+                    st.write(f"📝 Manager Comment Sentiment: {sentiment}")
             else:
                 st.warning("⚠️ No approved tasks found for this company.")
         else:
@@ -147,27 +160,29 @@ elif role == "Manager":
 
                 for match in res.matches:
                     md = match.metadata
+                    emp = md.get("employee", "Unknown")
+                    task = md.get("task", "Untitled")
                     emp_completion = md.get("completion", 0)
 
-                    st.write(f"👤 {md.get('employee')} | Task: **{md.get('task')}**")
+                    st.write(f"👤 {emp} | Task: **{task}**")
                     st.write(f"Reported Completion: {emp_completion}%")
 
-                    # Manager adjusts completion
+                    # Manager adjusts
                     manager_completion = st.slider(
-                        f"✅ Manager Adjusted Completion for {md.get('employee')} - {md.get('task')}",
+                        f"✅ Manager Adjusted Completion for {emp} - {task}",
                         0, 100, int(emp_completion), key=match.id
                     )
 
-                    # AI predictions on adjusted value
-                    predicted_marks = lin_reg.predict([[manager_completion]])[0]
+                    # AI predictions
+                    predicted_marks = float(lin_reg.predict([[manager_completion]])[0])
                     status = log_reg.predict([[manager_completion]])[0]
                     status_text = "On Track" if status == 1 else "Delayed"
 
                     st.write(f"🤖 AI Predicted Marks: {predicted_marks:.2f}/5")
                     st.write(f"📌 AI Status: {status_text}")
 
-                    # Manager comments + Sentiment
-                    comments = st.text_area(f"📝 Manager Comments for {md.get('employee')} - {md.get('task')}", key=f"c_{match.id}")
+                    # Comments + sentiment
+                    comments = st.text_area(f"📝 Manager Comments for {emp} - {task}", key=f"c_{match.id}")
                     sentiment_text = "N/A"
                     if comments:
                         X_new = vectorizer.transform([comments])
@@ -182,15 +197,15 @@ elif role == "Manager":
                         vectors=[{
                             "id": match.id,
                             "values": values,
-                            "metadata": {
+                            "metadata": safe_metadata({
                                 **md,
-                                "completion": manager_completion,
-                                "marks": float(predicted_marks),
+                                "completion": float(manager_completion),
+                                "marks": predicted_marks,
                                 "status": status_text,
                                 "reviewed": True,
                                 "comments": comments,
                                 "sentiment": sentiment_text
-                            }
+                            })
                         }]
                     )
 
